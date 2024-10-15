@@ -1,0 +1,5 @@
+CMakeFiles/
+build/
+.cmake/
+.zed/
+.vscode/
