@@ -20,10 +20,10 @@ sudo dnf install intel-basekit intel-comupte-runtime cmake ninja-build
 source /opt/intel/oneapi/setvars.sh
 ```
 
-> [!INFO]
-> Setup your editor to use the clangd provided by the Intel® oneAPI Base Toolkit
+> [!NOTE]
+> Setup your editor to use the formatter and language server provided by the Intel® oneAPI Base Toolkit.
 >
-> Located at: /opt/intel/oneapi/compiler/latest/bin/compiler/clangd
+> Located at: `/opt/intel/oneapi/compiler/latest/bin/compiler/`
 
 ## Generate compilation database
 
