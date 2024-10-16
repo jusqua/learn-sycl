@@ -1,2 +1,2 @@
-add_executable(out main.cpp)
-add_sycl_to_target(TARGET out SOURCES main.cpp)
+add_executable(hello-world main.cpp)
+add_sycl_to_target(TARGET hello-world SOURCES main.cpp)
