@@ -1,5 +1,9 @@
+#include <aspects.hpp>
+#include <backend_types.hpp>
+#include <cstdint>
 #include <filesystem>
 
+#include <info/info_desc.hpp>
 #include <sycl/sycl.hpp>
 #include <opencv2/opencv.hpp>
 #include <fmt/core.h>
@@ -41,20 +45,26 @@ int main(int argc, char** argv) {
     }
 
     try {
-        auto size = img.elemSize() * img.total();
         auto q = sycl::queue{ usm_selector };
 
+        fmt::println("Method:   Unified Shared Memory Data Management");
+        fmt::println("Device:   {}", q.get_device().get_info<sycl::info::device::name>());
+        fmt::println("Platform: {}", q.get_device().get_platform().get_info<sycl::info::platform::name>());
+
+        constexpr uint8_t mask = 255;
+        auto size = img.elemSize1() * img.total();
         auto ptr = sycl::malloc_device<uint8_t>(size, q);
 
-        auto devcp_ev = q.memcpy(ptr, img.data, size);
+        auto load_device_ev = q.memcpy(ptr, img.data, size);
 
-        auto filter_ev = q.parallel_for<negative_filter>(sycl::range{ size }, devcp_ev, [=](sycl::id<1> idx) {
+        auto filter_ev = q.parallel_for<negative_filter>(sycl::range{ size }, load_device_ev, [=](sycl::id<1> idx) {
             auto i = idx[0];
             ptr[i] = 255 - ptr[i];
         });
 
-        q.memcpy(img.data, ptr, size, filter_ev).wait();
+        auto load_host_ev = q.memcpy(img.data, ptr, size, filter_ev);
 
+        load_host_ev.wait();
         sycl::free(ptr, q);
 
         q.throw_asynchronous();

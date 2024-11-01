@@ -1,10 +1,6 @@
 #include <access/access.hpp>
-#include <accessor_image.hpp>
-#include <aliases.hpp>
-#include <cstdint>
 #include <filesystem>
 
-#include <image.hpp>
 #include <properties/accessor_properties.hpp>
 #include <sycl/sycl.hpp>
 #include <opencv2/opencv.hpp>
@@ -34,23 +30,41 @@ int main(int argc, char** argv) {
 
     outfile += fmt::format("negative-{}", infile.filename().c_str());
 
-    auto img = cv::imread(infile);
-    if (img.empty() || !img.isContinuous() || img.dims != 2) {
+    auto inimg = cv::imread(infile);
+    if (inimg.empty() || !inimg.isContinuous() || inimg.dims != 2) {
         fmt::println(stderr, "[infile] is not a valid image file or unsupported format");
         return 4;
     }
 
+    auto outimg = cv::Mat(inimg.rows, inimg.cols, inimg.type());
+
     try {
         auto q = sycl::queue{};
 
-        // TODO: create kernel for sycl::image type
+        fmt::println("Method:   Image Data Management");
+        fmt::println("Device:   {}", q.get_device().get_info<sycl::info::device::name>());
+        fmt::println("Platform: {}", q.get_device().get_platform().get_info<sycl::info::platform::name>());
+
+        constexpr sycl::float4 mask{ 1.0f, 1.0f, 1.0f, 1.0f };
+        sycl::range<2> img_range(inimg.rows, inimg.cols);
+        sycl::image<2> input_image(reinterpret_cast<sycl::uchar4*>(inimg.data), sycl::image_channel_order::rgba, sycl::image_channel_type::unsigned_int8, img_range);
+        sycl::image<2> output_image(reinterpret_cast<sycl::uchar4*>(outimg.data), sycl::image_channel_order::rgba, sycl::image_channel_type::unsigned_int8, img_range);
+
+        q.submit([&](sycl::handler& cgh) {
+            auto in_acc = input_image.get_access<sycl::float4, sycl::access_mode::read>(cgh);
+            auto out_acc = output_image.get_access<sycl::float4, sycl::access_mode::write>(cgh);
+
+            cgh.parallel_for<negative_filter>(img_range, [=](sycl::item<2> idx) {
+                // out_acc.write(idx, mask - in_acc.read(idx));
+            });
+        });
 
         q.wait_and_throw();
     } catch (const sycl::exception& e) {
         fmt::println(stderr, "Exception caught: {}", e.what());
     }
 
-    if (!cv::imwrite(outfile, img)) {
+    if (!cv::imwrite(outfile, outimg)) {
         fmt::println(stderr, "[outpath] has not enough disk space or permissions to write the output image");
         return 5;
     }

@@ -1,6 +1,5 @@
 #include <filesystem>
 
-#include <sycl/sycl.hpp>
 #include <opencv2/opencv.hpp>
 #include <fmt/core.h>
 
@@ -32,13 +31,13 @@ int main(int argc, char** argv) {
         return 4;
     }
 
-    for (int i = 0; i < img.rows; i++) {
-        for (int j = 0; j < img.cols; j++) {
-            auto& px = img.at<cv::Vec3b>(i, j);
-            for (int c = 0; c < img.channels(); c++) {
-                px.val[c] = 255 - px.val[c];
-            }
-        }
+    fmt::println("Method:   Host Serial Execution");
+    fmt::println("Device:   Host");
+    fmt::println("Platform: Host");
+
+    auto size = img.elemSize1() * img.total();
+    for (size_t i = 0; i < size; i++) {
+        img.data[i] = 255 - img.data[i];
     }
 
     if (!cv::imwrite(outfile, img)) {

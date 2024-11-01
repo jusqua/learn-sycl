@@ -1,5 +1,9 @@
+#include <access/access.hpp>
+#include <cstdint>
 #include <filesystem>
 
+#include <nd_range.hpp>
+#include <properties/accessor_properties.hpp>
 #include <sycl/sycl.hpp>
 #include <opencv2/opencv.hpp>
 #include <fmt/core.h>
@@ -35,16 +39,21 @@ int main(int argc, char** argv) {
     }
 
     try {
-        auto size = img.elemSize() * img.total();
         auto q = sycl::queue{};
 
-        auto buf = sycl::buffer<uint8_t>{ img.data, sycl::range{ size } };
+        fmt::println("Method:   Buffer Data Management");
+        fmt::println("Device:   {}", q.get_device().get_info<sycl::info::device::name>());
+        fmt::println("Platform: {}", q.get_device().get_platform().get_info<sycl::info::platform::name>());
+
+        constexpr uint8_t mask = 255;
+        auto size = sycl::range<1>{ img.elemSize1() * img.total() };
+        auto buf = sycl::buffer<uint8_t, 1>{ img.data, size };
 
         q.submit([&](sycl::handler& cgf) {
-            auto acc = sycl::accessor{ buf, cgf };
+            auto acc = sycl::accessor{ buf, cgf, sycl::read_write, sycl::no_init };
 
-            cgf.parallel_for<negative_filter>(size, [=](auto& idx) {
-                acc[idx] = 255 - acc[idx];
+            cgf.parallel_for<negative_filter>(size, [=](sycl::id<1> i) {
+                acc[i] = mask - acc[i];
             });
         });
 
