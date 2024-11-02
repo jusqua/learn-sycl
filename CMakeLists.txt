@@ -1,8 +1,4 @@
-if (CMAKE_HOST_WIN32)
-    cmake_minimum_required(VERSION 3.25)
-else()
-    cmake_minimum_required(VERSION 3.23.5)
-endif()
+cmake_minimum_required(VERSION 3.25)
 
 project(learnsycl LANGUAGES CXX)
 

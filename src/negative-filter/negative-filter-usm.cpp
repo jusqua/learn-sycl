@@ -1,9 +1,5 @@
-#include <aspects.hpp>
-#include <backend_types.hpp>
-#include <cstdint>
 #include <filesystem>
 
-#include <info/info_desc.hpp>
 #include <sycl/sycl.hpp>
 #include <opencv2/opencv.hpp>
 #include <fmt/core.h>
@@ -59,7 +55,7 @@ int main(int argc, char** argv) {
 
         auto filter_ev = q.parallel_for<negative_filter>(sycl::range{ size }, load_device_ev, [=](sycl::id<1> idx) {
             auto i = idx[0];
-            ptr[i] = 255 - ptr[i];
+            ptr[i] = mask - ptr[i];
         });
 
         auto load_host_ev = q.memcpy(img.data, ptr, size, filter_ev);

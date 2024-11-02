@@ -1,9 +1,5 @@
-#include <access/access.hpp>
-#include <cstdint>
 #include <filesystem>
 
-#include <nd_range.hpp>
-#include <properties/accessor_properties.hpp>
 #include <sycl/sycl.hpp>
 #include <opencv2/opencv.hpp>
 #include <fmt/core.h>
