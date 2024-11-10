@@ -1,0 +1,3 @@
+{
+    "clangd.path": "${env:ONEAPI_ROOT}/compiler/latest/bin/compiler/clangd"
+}
