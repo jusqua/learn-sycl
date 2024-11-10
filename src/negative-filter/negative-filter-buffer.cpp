@@ -42,7 +42,7 @@ int main(int argc, char** argv) {
         fmt::println("Platform: {}", q.get_device().get_platform().get_info<sycl::info::platform::name>());
 
         constexpr uint8_t mask = 255;
-        auto size = sycl::range<1>{ img.elemSize1() * img.total() };
+        auto size = sycl::range<1>{ img.elemSize() * img.total() };
         auto buf = sycl::buffer<uint8_t, 1>{ img.data, size };
 
         q.submit([&](sycl::handler& cgf) {

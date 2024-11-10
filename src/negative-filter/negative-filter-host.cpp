@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
     fmt::println("Device:   Host");
     fmt::println("Platform: Host");
 
-    auto size = img.elemSize1() * img.total();
+    auto size = img.elemSize() * img.total();
     for (size_t i = 0; i < size; i++) {
         img.data[i] = 255 - img.data[i];
     }

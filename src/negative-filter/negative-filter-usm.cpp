@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
         fmt::println("Platform: {}", q.get_device().get_platform().get_info<sycl::info::platform::name>());
 
         constexpr uint8_t mask = 255;
-        auto size = img.elemSize1() * img.total();
+        auto size = img.elemSize() * img.total();
         auto ptr = sycl::malloc_device<uint8_t>(size, q);
 
         auto load_device_ev = q.memcpy(ptr, img.data, size);
