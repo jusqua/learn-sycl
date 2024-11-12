@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 3.25)
 
 project(learnsycl LANGUAGES CXX)
 
-add_compile_options(-Wall -Wextra -O3)
 find_package(IntelSYCL CONFIG REQUIRED)
 
 find_package(OpenCV CONFIG REQUIRED)
