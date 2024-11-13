@@ -17,8 +17,8 @@ public:
     ~Image();
 };
 
-Image* load_image(const char* filepath);
-int save_image_as(const char* filepath, Image* image);
+Image load_image(const char* filepath);
+int save_image_as(const char* filepath, Image& image);
 
 }  // namespace visionsycl
 
