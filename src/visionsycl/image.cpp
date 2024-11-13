@@ -23,8 +23,19 @@ Image* load_image(const char* filepath) {
 
     image->channels = comp;
     image->dimensions = dims;
-    image->step = new int[dims](0, 0);
-    image->shape = new int[dims](y, x);
+
+    image->step = new int[dims];
+    image->step[0] = 0;
+    image->step[1] = 0;
+
+    image->shape = new int[dims];
+    image->shape[0] = y;
+    image->shape[1] = x;
+
+    image->length = image->channels;
+    for (size_t i = 0; i < image->dimensions; ++i)
+        image->length *= image->shape[i];
+
     image->data = data;
 
     return image;
