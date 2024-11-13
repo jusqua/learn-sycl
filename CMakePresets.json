@@ -21,7 +21,6 @@
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_C_COMPILER": "icx-cl",
         "CMAKE_CXX_COMPILER": "icx-cl",
-        "CMAKE_CXX_STANDARD": "17",
         "CMAKE_CXX_FLAGS": "/std:c++latest"
       }
     }
