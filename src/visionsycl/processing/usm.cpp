@@ -11,7 +11,7 @@ void invertion(sycl::queue q, const Image& input, Image& output) {
 
     auto load_device_ev = q.memcpy(inptr, input.data, input.length);
 
-    auto kernel_ev = q.parallel_for(sycl::range{ input.length }, { load_device_ev }, [=](sycl::id<1> idx) {
+    auto kernel_ev = q.parallel_for(sycl::range{ input.length }, { load_device_ev }, [mask, inptr, outptr](sycl::id<1> idx) {
         auto i = idx[0];
         outptr[i] = mask - inptr[i];
     });
