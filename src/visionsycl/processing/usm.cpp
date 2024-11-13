@@ -4,7 +4,7 @@
 namespace visionsycl {
 namespace usm {
 
-void invertion(sycl::queue q, const Image& input, Image& output) {
+void inversion(sycl::queue q, const Image& input, Image& output) {
     constexpr uint8_t mask = 255;
     auto inptr = sycl::malloc_device<uint8_t>(input.length, q);
     auto outptr = sycl::malloc_device<uint8_t>(output.length, q);

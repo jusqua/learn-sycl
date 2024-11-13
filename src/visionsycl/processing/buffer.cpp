@@ -4,7 +4,7 @@
 namespace visionsycl {
 namespace buffer {
 
-void invertion(sycl::queue q, const Image& input, Image& output) {
+void inversion(sycl::queue q, const Image& input, Image& output) {
     constexpr uint8_t mask = 255;
     auto inbuf = sycl::buffer<uint8_t, 1>{ input.data, input.length };
     auto outbuf = sycl::buffer<uint8_t, 1>{ output.data, output.length };

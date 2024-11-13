@@ -7,17 +7,17 @@
 namespace visionsycl {
 namespace host {
 
-void invertion(const Image& input, Image& output);
+void inversion(const Image& input, Image& output);
 
 }  // namespace host
 namespace usm {
 
-void invertion(sycl::queue q, const Image& input, Image& output);
+void inversion(sycl::queue q, const Image& input, Image& output);
 
 }  // namespace usm
 namespace buffer {
 
-void invertion(sycl::queue q, const Image& input, Image& output);
+void inversion(sycl::queue q, const Image& input, Image& output);
 
 }  // namespace buffer
 }  // namespace visionsycl
