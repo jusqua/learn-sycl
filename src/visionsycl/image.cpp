@@ -8,10 +8,13 @@
 
 namespace visionsycl {
 
-Image::~Image() {
-    delete[] this->shape;
-    delete[] this->step;
-    delete[] this->data;
+Image::Image() {
+    this->dimensions = 0;
+    this->channels = 0;
+    this->length = 0;
+    this->step = nullptr;
+    this->shape = nullptr;
+    this->data = nullptr;
 }
 
 Image::Image(int width, int height, int channels) {
@@ -32,6 +35,12 @@ Image::Image(int width, int height, int channels) {
         this->length *= this->shape[i];
 
     this->data = new unsigned char[this->length];
+}
+
+Image::~Image() {
+    delete[] this->shape;
+    delete[] this->step;
+    delete[] this->data;
 }
 
 Image load_image(const char* filepath) {
