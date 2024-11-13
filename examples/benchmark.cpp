@@ -57,6 +57,8 @@ int main(int argc, char **argv) {
         auto end = ch::high_resolution_clock::now();
         auto delta = ch::duration_cast<ch::milliseconds>(end - start);
         std::cout << "host invertion took " << delta.count() << "ms" << std::endl;
+        auto filename = outpath.generic_string() + "inversion-host-" + inpath.filename().generic_string();
+        vn::save_image_as(filename.c_str(), output);
     }
     {
         auto start = ch::high_resolution_clock::now();
@@ -64,6 +66,8 @@ int main(int argc, char **argv) {
         auto end = ch::high_resolution_clock::now();
         auto delta = ch::duration_cast<ch::milliseconds>(end - start);
         std::cout << "usm invertion took " << delta.count() << "ms" << std::endl;
+        auto filename = outpath.generic_string() + "inversion-usm-" + inpath.filename().generic_string();
+        vn::save_image_as(filename.c_str(), output);
     }
     {
         auto start = ch::high_resolution_clock::now();
@@ -71,6 +75,8 @@ int main(int argc, char **argv) {
         auto end = ch::high_resolution_clock::now();
         auto delta = ch::duration_cast<ch::milliseconds>(end - start);
         std::cout << "buffer invertion took " << delta.count() << "ms" << std::endl;
+        auto filename = outpath.generic_string() + "inversion-buffer-" + inpath.filename().generic_string();
+        vn::save_image_as(filename.c_str(), output);
     }
 
     return 0;
