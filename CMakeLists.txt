@@ -6,7 +6,7 @@ find_package(IntelSYCL CONFIG REQUIRED)
 include_directories(${ONEAPI_ROOT}/dev-utilities/latest/include)
 include_directories(include/)
 
-file(GLOB SOURCES include/**/*.hpp src/**/*.cpp)
+file(GLOB_RECURSE SOURCES examples/benchmark.cpp include/**/*.hpp src/**/*.cpp)
 
-add_executable(${PROJECT_NAME} ${SOURCES})
-add_sycl_to_target(TARGET ${PROJECT_NAME} SOURCES ${SOURCES})
+add_executable(benchmark ${SOURCES})
+add_sycl_to_target(TARGET benchmark SOURCES ${SOURCES})
