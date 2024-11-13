@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(learnsycl LANGUAGES CXX)
+project(visionsycl LANGUAGES CXX)
 
 find_package(IntelSYCL CONFIG REQUIRED)
+include_directories(${ONEAPI_ROOT}/dev-utilities/latest/include)
+include_directories(include/)
 
-find_package(OpenCV CONFIG REQUIRED)
-include_directories( ${OpenCV_INCLUDE_DIRS} )
+file(GLOB SOURCES include/**/*.hpp src/**/*.cpp)
 
-find_package(fmt REQUIRED)
-
-add_subdirectory(src)
+add_executable(${PROJECT_NAME} ${SOURCES})
+add_sycl_to_target(TARGET ${PROJECT_NAME} SOURCES ${SOURCES})
