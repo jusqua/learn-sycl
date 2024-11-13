@@ -14,6 +14,26 @@ Image::~Image() {
     delete[] this->data;
 }
 
+Image::Image(int width, int height, int channels) {
+    constexpr auto dims = 2;
+    this->channels = channels;
+    this->dimensions = dims;
+
+    this->step = new int[dims];
+    this->step[0] = 0;
+    this->step[1] = 0;
+
+    this->shape = new int[dims];
+    this->shape[0] = height;
+    this->shape[1] = width;
+
+    this->length = this->channels;
+    for (size_t i = 0; i < this->dimensions; ++i)
+        this->length *= this->shape[i];
+
+    this->data = new unsigned char[this->length];
+}
+
 Image* load_image(const char* filepath) {
     constexpr auto dims = 2;
     auto image = new Image();

@@ -13,6 +13,7 @@ public:
     unsigned char* data;
 
     Image();
+    Image(int width, int height, int channels);
     ~Image();
 };
 
