@@ -51,5 +51,29 @@ void grayscale(sycl::queue q, const Image& input, Image& output) {
     q.throw_asynchronous();
 }
 
+void threshold(sycl::queue q, const Image& input, Image& output, int threshold, int top) {
+    auto inptr = sycl::malloc_device<uint8_t>(input.length, q);
+    auto outptr = sycl::malloc_device<uint8_t>(output.length, q);
+
+    auto load_device_ev = q.memcpy(inptr, input.data, input.length);
+
+    auto kernel_ev = q.parallel_for(sycl::range{ input.length / 3 }, { load_device_ev }, [inptr, outptr, threshold, top](sycl::id<1> idx) {
+        auto i = idx[0] * 3;
+
+        auto bin = (inptr[i] + inptr[i + 1] + inptr[i + 2]) / 3 > threshold ? top : 0;
+        outptr[i] = bin;
+        outptr[i + 1] = bin;
+        outptr[i + 2] = bin;
+    });
+
+    auto load_host_ev = q.memcpy(output.data, outptr, output.length, kernel_ev);
+
+    load_host_ev.wait();
+    sycl::free(inptr, q);
+    sycl::free(outptr, q);
+
+    q.throw_asynchronous();
+}
+
 }  // namespace usm
 }  // namespace visionsycl

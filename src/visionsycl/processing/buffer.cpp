@@ -46,5 +46,26 @@ void grayscale(sycl::queue q, const Image& input, Image& output) {
     q.wait_and_throw();
 }
 
+void threshold(sycl::queue q, const Image& input, Image& output, int threshold, int top) {
+    auto inbuf = sycl::buffer<unsigned char, 1>{ input.data, input.length };
+    auto outbuf = sycl::buffer<unsigned char, 1>{ output.data, output.length };
+
+    q.submit([&](sycl::handler& cgf) {
+        auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
+        auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
+
+        cgf.parallel_for(input.length / 3, [inacc, outacc, threshold, top](sycl::id<1> idx) {
+            auto i = idx[0] * 3;
+
+            auto bin = (inacc[i] + inacc[i + 1] + inacc[i + 2]) / 3 > threshold ? top : 0;
+            outacc[i] = bin;
+            outacc[i + 1] = bin;
+            outacc[i + 2] = bin;
+        });
+    });
+
+    q.wait_and_throw();
+}
+
 }  // namespace buffer
 }  // namespace visionsycl
