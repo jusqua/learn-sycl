@@ -1,8 +1,8 @@
 #include <chrono>
-#include <iostream>
 #include <filesystem>
+#include <info/info_desc.hpp>
+#include <iostream>
 
-#include <queue.hpp>
 #include <visionsycl/image.hpp>
 #include <visionsycl/processing.hpp>
 #include <visionsycl/selector.hpp>
@@ -11,13 +11,40 @@ namespace ch = std::chrono;
 namespace fs = std::filesystem;
 namespace vn = visionsycl;
 
+double get_delta(std::function<void(void)> func) {
+    auto start = ch::high_resolution_clock::now();
+    func();
+    auto end = ch::high_resolution_clock::now();
+    return static_cast<ch::duration<double, std::milli>>(end - start).count();
+}
+
+void perform_benchmark(fs::path inpath, fs::path outpath, size_t rounds, vn::Image &image, std::string title, std::vector<std::pair<std::string, std::function<void(void)>>> func_list) {
+    double delta;
+
+    std::cout << title << std::endl;
+    for (auto func : func_list) {
+        auto &name = func.first;
+        auto &f = func.second;
+
+        delta = get_delta(f);
+        std::cout << name << ": " << delta << "ms (once) | ";
+        delta = get_delta([&rounds, &f] { for (size_t i = 0; i < rounds; ++i) f(); });
+        std::cout << delta << "ms (" << rounds << " times)" << std::endl;
+
+        auto filepath = outpath.generic_string() + title + "-" + name + "-" + inpath.filename().generic_string();
+        vn::save_image_as(filepath.c_str(), image);
+    }
+    std::cout << std::endl;
+}
+
 int main(int argc, char **argv) {
     if (argc < 3 || argc > 4) {
-        std::cerr << "Usage: " << argv[0] << " [INPUT IMAGE] [OUTPUT PATH] [[ROUNDS] = 1000]" << std::endl;
+        std::cerr << "Usage: " << argv[0]
+                  << " [INPUT IMAGE] [OUTPUT PATH] [[ROUNDS] = 1000]" << std::endl;
         return 1;
     }
 
-    auto rounds = 1000;
+    size_t rounds = 1000;
     if (argc == 4) {
         auto arg = std::string(argv[3]);
 
@@ -51,89 +78,46 @@ int main(int argc, char **argv) {
     auto output = vn::Image(input.shape[1], input.shape[0], input.channels);
     auto queue = sycl::queue{ vn::usm_selector_v };
 
-    {
-        auto start = ch::high_resolution_clock::now();
-        vn::host::inversion(input, output);
-        auto end = ch::high_resolution_clock::now();
-        auto delta = ch::duration_cast<ch::milliseconds>(end - start);
-        std::cout << "host invertion took " << delta.count() << "ms" << std::endl;
-        auto filename = outpath.generic_string() + "inversion-host-" + inpath.filename().generic_string();
-        vn::save_image_as(filename.c_str(), output);
-    }
-    {
-        auto start = ch::high_resolution_clock::now();
-        vn::usm::inversion(queue, input, output);
-        auto end = ch::high_resolution_clock::now();
-        auto delta = ch::duration_cast<ch::milliseconds>(end - start);
-        std::cout << "usm invertion took " << delta.count() << "ms" << std::endl;
-        auto filename = outpath.generic_string() + "inversion-usm-" + inpath.filename().generic_string();
-        vn::save_image_as(filename.c_str(), output);
-    }
-    {
-        auto start = ch::high_resolution_clock::now();
-        vn::buffer::inversion(queue, input, output);
-        auto end = ch::high_resolution_clock::now();
-        auto delta = ch::duration_cast<ch::milliseconds>(end - start);
-        std::cout << "buffer invertion took " << delta.count() << "ms" << std::endl;
-        auto filename = outpath.generic_string() + "inversion-buffer-" + inpath.filename().generic_string();
-        vn::save_image_as(filename.c_str(), output);
-    }
+    std::cout << "Device:        " << queue.get_device().get_info<sycl::info::device::name>() << std::endl
+              << "Platform:      " << queue.get_device().get_platform().get_info<sycl::info::platform::name>() << std::endl
+              << "Compute Units: " << queue.get_device().get_info<sycl::info::device::max_compute_units>() << std::endl
+              << std::endl;
 
-    {
-        auto start = ch::high_resolution_clock::now();
-        vn::host::grayscale(input, output);
-        auto end = ch::high_resolution_clock::now();
-        auto delta = ch::duration_cast<ch::milliseconds>(end - start);
-        std::cout << "host grayscale took " << delta.count() << "ms" << std::endl;
-        auto filename = outpath.generic_string() + "grayscale-host-" + inpath.filename().generic_string();
-        vn::save_image_as(filename.c_str(), output);
-    }
-    {
-        auto start = ch::high_resolution_clock::now();
-        vn::usm::grayscale(queue, input, output);
-        auto end = ch::high_resolution_clock::now();
-        auto delta = ch::duration_cast<ch::milliseconds>(end - start);
-        std::cout << "usm grayscale took " << delta.count() << "ms" << std::endl;
-        auto filename = outpath.generic_string() + "grayscale-usm-" + inpath.filename().generic_string();
-        vn::save_image_as(filename.c_str(), output);
-    }
-    {
-        auto start = ch::high_resolution_clock::now();
-        vn::buffer::grayscale(queue, input, output);
-        auto end = ch::high_resolution_clock::now();
-        auto delta = ch::duration_cast<ch::milliseconds>(end - start);
-        std::cout << "buffer grayscale took " << delta.count() << "ms" << std::endl;
-        auto filename = outpath.generic_string() + "grayscale-buffer-" + inpath.filename().generic_string();
-        vn::save_image_as(filename.c_str(), output);
-    }
+    perform_benchmark(
+        inpath,
+        outpath,
+        rounds,
+        output,
+        "inversion",
+        {
+            { "host", [&input, &output] { vn::host::inversion(input, output); } },
+            { "usm", [&queue, &input, &output] { vn::usm::inversion(queue, input, output); } },
+            { "buffer", [&queue, &input, &output] { vn::buffer::inversion(queue, input, output); } },
+        });
 
-    {
-        auto start = ch::high_resolution_clock::now();
-        vn::host::threshold(input, output);
-        auto end = ch::high_resolution_clock::now();
-        auto delta = ch::duration_cast<ch::milliseconds>(end - start);
-        std::cout << "host threshold took " << delta.count() << "ms" << std::endl;
-        auto filename = outpath.generic_string() + "threshold-host-" + inpath.filename().generic_string();
-        vn::save_image_as(filename.c_str(), output);
-    }
-    {
-        auto start = ch::high_resolution_clock::now();
-        vn::usm::threshold(queue, input, output);
-        auto end = ch::high_resolution_clock::now();
-        auto delta = ch::duration_cast<ch::milliseconds>(end - start);
-        std::cout << "usm threshold took " << delta.count() << "ms" << std::endl;
-        auto filename = outpath.generic_string() + "threshold-usm-" + inpath.filename().generic_string();
-        vn::save_image_as(filename.c_str(), output);
-    }
-    {
-        auto start = ch::high_resolution_clock::now();
-        vn::buffer::threshold(queue, input, output);
-        auto end = ch::high_resolution_clock::now();
-        auto delta = ch::duration_cast<ch::milliseconds>(end - start);
-        std::cout << "buffer threshold took " << delta.count() << "ms" << std::endl;
-        auto filename = outpath.generic_string() + "threshold-buffer-" + inpath.filename().generic_string();
-        vn::save_image_as(filename.c_str(), output);
-    }
+    perform_benchmark(
+        inpath,
+        outpath,
+        rounds,
+        output,
+        "grayscale",
+        {
+            { "host", [&input, &output] { vn::host::grayscale(input, output); } },
+            { "usm", [&queue, &input, &output] { vn::usm::grayscale(queue, input, output); } },
+            { "buffer", [&queue, &input, &output] { vn::buffer::grayscale(queue, input, output); } },
+        });
+
+    perform_benchmark(
+        inpath,
+        outpath,
+        rounds,
+        output,
+        "threshold",
+        {
+            { "host", [&input, &output] { vn::host::threshold(input, output); } },
+            { "usm", [&queue, &input, &output] { vn::usm::threshold(queue, input, output); } },
+            { "buffer", [&queue, &input, &output] { vn::buffer::threshold(queue, input, output); } },
+        });
 
     return 0;
 }
