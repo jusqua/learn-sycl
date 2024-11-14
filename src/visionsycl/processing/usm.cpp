@@ -11,9 +11,12 @@ void inversion(sycl::queue q, const Image& input, Image& output) {
 
     auto load_device_ev = q.memcpy(inptr, input.data, input.length);
 
-    auto kernel_ev = q.parallel_for(sycl::range{ input.length }, { load_device_ev }, [mask, inptr, outptr](sycl::id<1> idx) {
-        auto i = idx[0];
+    auto kernel_ev = q.parallel_for(sycl::range{ input.length / 3 }, { load_device_ev }, [mask, inptr, outptr](sycl::id<1> idx) {
+        auto i = idx[0] * 3;
+
         outptr[i] = mask - inptr[i];
+        outptr[i + 1] = mask - inptr[i + 1];
+        outptr[i + 2] = mask - inptr[i + 2];
     });
 
     auto load_host_ev = q.memcpy(output.data, outptr, output.length, kernel_ev);

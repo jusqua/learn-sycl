@@ -13,8 +13,12 @@ void inversion(sycl::queue q, const Image& input, Image& output) {
         auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
         auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
 
-        cgf.parallel_for(input.length, [mask, inacc, outacc](sycl::id<1> i) {
+        cgf.parallel_for(input.length / 3, [mask, inacc, outacc](sycl::id<1> idx) {
+            auto i = idx[0] * 3;
+
             outacc[i] = mask - inacc[i];
+            outacc[i + 1] = mask - inacc[i + 1];
+            outacc[i + 2] = mask - inacc[i + 2];
         });
     });
 
