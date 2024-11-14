@@ -79,5 +79,33 @@ int main(int argc, char **argv) {
         vn::save_image_as(filename.c_str(), output);
     }
 
+    {
+        auto start = ch::high_resolution_clock::now();
+        vn::host::grayscale(input, output);
+        auto end = ch::high_resolution_clock::now();
+        auto delta = ch::duration_cast<ch::milliseconds>(end - start);
+        std::cout << "host grayscale took " << delta.count() << "ms" << std::endl;
+        auto filename = outpath.generic_string() + "grayscale-host-" + inpath.filename().generic_string();
+        vn::save_image_as(filename.c_str(), output);
+    }
+    {
+        auto start = ch::high_resolution_clock::now();
+        vn::usm::grayscale(queue, input, output);
+        auto end = ch::high_resolution_clock::now();
+        auto delta = ch::duration_cast<ch::milliseconds>(end - start);
+        std::cout << "usm grayscale took " << delta.count() << "ms" << std::endl;
+        auto filename = outpath.generic_string() + "grayscale-usm-" + inpath.filename().generic_string();
+        vn::save_image_as(filename.c_str(), output);
+    }
+    {
+        auto start = ch::high_resolution_clock::now();
+        vn::buffer::grayscale(queue, input, output);
+        auto end = ch::high_resolution_clock::now();
+        auto delta = ch::duration_cast<ch::milliseconds>(end - start);
+        std::cout << "buffer grayscale took " << delta.count() << "ms" << std::endl;
+        auto filename = outpath.generic_string() + "grayscale-buffer-" + inpath.filename().generic_string();
+        vn::save_image_as(filename.c_str(), output);
+    }
+
     return 0;
 }

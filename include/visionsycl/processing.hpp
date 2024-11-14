@@ -8,16 +8,19 @@ namespace visionsycl {
 namespace host {
 
 void inversion(const Image& input, Image& output);
+void grayscale(const Image& input, Image& output);
 
 }  // namespace host
 namespace usm {
 
 void inversion(sycl::queue q, const Image& input, Image& output);
+void grayscale(sycl::queue q, const Image& input, Image& output);
 
 }  // namespace usm
 namespace buffer {
 
 void inversion(sycl::queue q, const Image& input, Image& output);
+void grayscale(sycl::queue q, const Image& input, Image& output);
 
 }  // namespace buffer
 }  // namespace visionsycl
