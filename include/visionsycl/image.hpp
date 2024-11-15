@@ -9,7 +9,7 @@ public:
     int dimensions;
     int* shape;
     int* step;
-    size_t length;
+    unsigned long length;
     unsigned char* data;
 
     Image();
