@@ -48,7 +48,7 @@ Image load_image(const char* filepath) {
     auto image = Image();
 
     int x, y, comp;
-    auto data = stbi_load(filepath, &x, &y, &comp, NULL);
+    auto data = stbi_load(filepath, &x, &y, &comp, 0);
 
     image.channels = comp;
     image.dimensions = dims;
