@@ -6,35 +6,36 @@ namespace usm {
 
 void inversion(sycl::queue q, const Image& input, Image& output) {
     constexpr uint8_t mask = 255;
+    auto channels = input.channels;
     auto inptr = sycl::malloc_device<uint8_t>(input.length, q);
     auto outptr = sycl::malloc_device<uint8_t>(output.length, q);
 
-    auto load_device_ev = q.memcpy(inptr, input.data, input.length);
+    q.memcpy(inptr, input.data, input.length).wait();
 
-    auto kernel_ev = q.parallel_for(sycl::range{ input.length / 3 }, { load_device_ev }, [mask, inptr, outptr](sycl::id<1> idx) {
-        auto i = idx[0] * 3;
+    auto ev = q.parallel_for(input.length / channels, [mask, channels, inptr, outptr](sycl::id<1> idx) {
+        auto i = idx[0] * channels;
 
         outptr[i] = mask - inptr[i];
         outptr[i + 1] = mask - inptr[i + 1];
         outptr[i + 2] = mask - inptr[i + 2];
     });
 
-    auto load_host_ev = q.memcpy(output.data, outptr, output.length, kernel_ev);
+    q.memcpy(output.data, outptr, output.length, ev).wait();
 
-    load_host_ev.wait();
     sycl::free(inptr, q);
     sycl::free(outptr, q);
     q.throw_asynchronous();
 }
 
 void grayscale(sycl::queue q, const Image& input, Image& output) {
+    auto channels = input.channels;
     auto inptr = sycl::malloc_device<uint8_t>(input.length, q);
     auto outptr = sycl::malloc_device<uint8_t>(output.length, q);
 
-    auto load_device_ev = q.memcpy(inptr, input.data, input.length);
+    q.memcpy(inptr, input.data, input.length).wait();
 
-    auto kernel_ev = q.parallel_for(sycl::range{ input.length / 3 }, { load_device_ev }, [inptr, outptr](sycl::id<1> idx) {
-        auto i = idx[0] * 3;
+    auto ev = q.parallel_for(input.length / channels, [channels, inptr, outptr](sycl::id<1> idx) {
+        auto i = idx[0] * channels;
 
         auto mean = (inptr[i] + inptr[i + 1] + inptr[i + 2]) / 3;
         outptr[i] = mean;
@@ -42,9 +43,8 @@ void grayscale(sycl::queue q, const Image& input, Image& output) {
         outptr[i + 2] = mean;
     });
 
-    auto load_host_ev = q.memcpy(output.data, outptr, output.length, kernel_ev);
+    q.memcpy(output.data, outptr, output.length, ev).wait();
 
-    load_host_ev.wait();
     sycl::free(inptr, q);
     sycl::free(outptr, q);
 
@@ -52,12 +52,13 @@ void grayscale(sycl::queue q, const Image& input, Image& output) {
 }
 
 void threshold(sycl::queue q, const Image& input, Image& output, int threshold, int top) {
+    auto channels = input.channels;
     auto inptr = sycl::malloc_device<uint8_t>(input.length, q);
     auto outptr = sycl::malloc_device<uint8_t>(output.length, q);
 
-    auto load_device_ev = q.memcpy(inptr, input.data, input.length);
+    q.memcpy(inptr, input.data, input.length).wait();
 
-    auto kernel_ev = q.parallel_for(sycl::range{ input.length / 3 }, { load_device_ev }, [inptr, outptr, threshold, top](sycl::id<1> idx) {
+    auto ev = q.parallel_for(input.length / channels, [channels, threshold, top, inptr, outptr](sycl::id<1> idx) {
         auto i = idx[0] * 3;
 
         auto bin = (inptr[i] + inptr[i + 1] + inptr[i + 2]) / 3 > threshold ? top : 0;
@@ -66,9 +67,8 @@ void threshold(sycl::queue q, const Image& input, Image& output, int threshold, 
         outptr[i + 2] = bin;
     });
 
-    auto load_host_ev = q.memcpy(output.data, outptr, output.length, kernel_ev);
+    q.memcpy(output.data, outptr, output.length, ev).wait();
 
-    load_host_ev.wait();
     sycl::free(inptr, q);
     sycl::free(outptr, q);
 
