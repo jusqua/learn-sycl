@@ -101,7 +101,11 @@ int main(int argc, char** argv) {
     std::cout << group << std::endl;
     {
         auto f = [&input, &output] {
-            vn::host::inversion(input, output);
+            for (size_t i = 0; i < input.length; i += input.channels) {
+                output.data[i] = 255 - input.data[i];
+                output.data[i + 1] = 255 - input.data[i + 1];
+                output.data[i + 2] = 255 - input.data[i + 2];
+            }
         };
         title = "host";
         perform_benchmark(title, rounds, f);
@@ -142,7 +146,12 @@ int main(int argc, char** argv) {
     std::cout << group << std::endl;
     {
         auto f = [&input, &output] {
-            vn::host::grayscale(input, output);
+            for (size_t i = 0; i < input.length; i += input.channels) {
+                auto mean = (input.data[i] + input.data[i + 1] + input.data[i + 2]) / 3;
+                output.data[i] = mean;
+                output.data[i + 1] = mean;
+                output.data[i + 2] = mean;
+            }
         };
         title = "host";
         perform_benchmark(title, rounds, f);
@@ -183,8 +192,15 @@ int main(int argc, char** argv) {
     group = "threshold";
     std::cout << group << std::endl;
     {
-        auto f = [&input, &output] {
-            vn::host::threshold(input, output);
+        auto threshold = 128;
+        auto top = 128;
+        auto f = [&input, &output, &threshold, &top] {
+            for (size_t i = 0; i < input.length; i += input.channels) {
+                auto bin = (input.data[i] + input.data[i + 1] + input.data[i + 2]) / 3 > threshold ? top : 0;
+                output.data[i] = bin;
+                output.data[i + 1] = bin;
+                output.data[i + 2] = bin;
+            }
         };
         title = "host";
         perform_benchmark(title, rounds, f);
