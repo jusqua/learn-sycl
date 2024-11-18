@@ -11,7 +11,7 @@ template <typename inT, typename outT>
 class InversionKernel {
 public:
     InversionKernel(int channels, inT& in, outT& out) : channels(channels), in(in), out(out) {};
-    SYCL_EXTERNAL void operator()(sycl::id<1> idx) const {
+    void operator()(sycl::id<1> idx) const {
         auto i = idx[0] * channels;
 
         out[i] = mask - in[i];
@@ -30,7 +30,7 @@ template <typename inT, typename outT>
 class GrayscaleKernel {
 public:
     GrayscaleKernel(int channels, inT& in, outT& out) : channels(channels), in(in), out(out) {};
-    SYCL_EXTERNAL void operator()(sycl::id<1> idx) const {
+    void operator()(sycl::id<1> idx) const {
         auto i = idx[0] * channels;
 
         auto mean = (in[i] + in[i + 1] + in[i + 2]) / 3;
@@ -49,7 +49,7 @@ template <typename inT, typename outT>
 class ThresholdKernel {
 public:
     ThresholdKernel(int channels, inT& in, outT& out, int threshold = 128, int top = 255) : channels(channels), in(in), out(out), threshold(threshold), top(top) {};
-    SYCL_EXTERNAL void operator()(sycl::id<1> idx) const {
+    void operator()(sycl::id<1> idx) const {
         auto i = idx[0] * channels;
 
         auto bin = (in[i] + in[i + 1] + in[i + 2]) / 3 > threshold ? top : 0;
