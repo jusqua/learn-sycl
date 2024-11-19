@@ -102,8 +102,10 @@ int main(int argc, char** argv) {
 
     group = "inversion";
     std::cout << group << std::endl;
+    constexpr unsigned char inversion_mask = 255;
     {
-        auto f = [&input, &output] {
+        auto& mask = inversion_mask;
+        auto f = [&] {
             for (size_t i = 0; i < input.length; i += input.channels) {
                 output.data[i] = 255 - input.data[i];
                 output.data[i + 1] = 255 - input.data[i + 1];
@@ -115,8 +117,8 @@ int main(int argc, char** argv) {
         host_save_image(get_filepath(group, title, inpath, outpath));
     }
     {
-        constexpr unsigned char mask = 255;
-        auto f = [&queue, &channels, &shape, &inptr, &outptr] {
+        auto& mask = inversion_mask;
+        auto f = [&] {
             auto kernel = vn::InversionKernel<unsigned char*, unsigned char*, unsigned char>(channels, inptr, outptr, mask);
             queue.parallel_for(shape, kernel);
             queue.wait_and_throw();
@@ -126,8 +128,8 @@ int main(int argc, char** argv) {
         usm_save_image(get_filepath(group, title, inpath, outpath));
     }
     {
-        constexpr unsigned char mask = 255;
-        auto f = [&queue, &channels, &shape, &inbuf, &outbuf] {
+        auto& mask = inversion_mask;
+        auto f = [&] {
             queue.submit([&](sycl::handler& cgf) {
                 auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
                 auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
@@ -147,7 +149,7 @@ int main(int argc, char** argv) {
     group = "grayscale";
     std::cout << group << std::endl;
     {
-        auto f = [&input, &output] {
+        auto f = [&] {
             for (size_t i = 0; i < input.length; i += input.channels) {
                 auto mean = (input.data[i] + input.data[i + 1] + input.data[i + 2]) / 3;
                 output.data[i] = mean;
@@ -160,7 +162,7 @@ int main(int argc, char** argv) {
         host_save_image(get_filepath(group, title, inpath, outpath));
     }
     {
-        auto f = [&queue, &channels, &shape, &inptr, &outptr] {
+        auto f = [&] {
             auto kernel = vn::GrayscaleKernel<unsigned char*, unsigned char*>(channels, inptr, outptr);
             queue.parallel_for(shape, kernel);
             queue.wait_and_throw();
@@ -170,7 +172,7 @@ int main(int argc, char** argv) {
         usm_save_image(get_filepath(group, title, inpath, outpath));
     }
     {
-        auto f = [&queue, &channels, &shape, &inbuf, &outbuf] {
+        auto f = [&] {
             queue.submit([&](sycl::handler& cgf) {
                 auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
                 auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
@@ -188,15 +190,17 @@ int main(int argc, char** argv) {
     std::cout << std::endl;
 
     group = "threshold";
+    constexpr unsigned char threshold_control = 128;
+    constexpr unsigned char threshold_top = 255;
     std::cout << group << std::endl;
     {
-        auto threshold = 128;
-        auto top = 255;
-        auto f = [&input, &output, &threshold, &top] {
+        auto& control = threshold_control;
+        auto& top = threshold_top;
+        auto f = [&] {
             for (size_t i = 0; i < input.length; i += input.channels) {
-                output.data[i] = input.data[i] > threshold ? top : 0;
-                output.data[i + 1] = input.data[i + 1] > threshold ? top : 0;
-                output.data[i + 2] = input.data[i + 2] > threshold ? top : 0;
+                output.data[i] = input.data[i] > control ? top : 0;
+                output.data[i + 1] = input.data[i + 1] > control ? top : 0;
+                output.data[i + 2] = input.data[i + 2] > control ? top : 0;
             }
         };
         title = "host";
@@ -204,8 +208,10 @@ int main(int argc, char** argv) {
         host_save_image(get_filepath(group, title, inpath, outpath));
     }
     {
-        auto f = [&queue, &channels, &shape, &inptr, &outptr] {
-            auto kernel = vn::ThresholdKernel<unsigned char*, unsigned char*>(channels, inptr, outptr);
+        auto& control = threshold_control;
+        auto& top = threshold_top;
+        auto f = [&] {
+            auto kernel = vn::ThresholdKernel<unsigned char*, unsigned char*, unsigned char>(channels, inptr, outptr, control, top);
             queue.parallel_for(shape, kernel);
             queue.wait_and_throw();
         };
@@ -214,11 +220,13 @@ int main(int argc, char** argv) {
         usm_save_image(get_filepath(group, title, inpath, outpath));
     }
     {
-        auto f = [&queue, &channels, &shape, &inbuf, &outbuf] {
+        auto& control = threshold_control;
+        auto& top = threshold_top;
+        auto f = [&] {
             queue.submit([&](sycl::handler& cgf) {
                 auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
                 auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
-                auto kernel = vn::ThresholdKernel<sycl::accessor<unsigned char, 1, sycl::access::mode::read>, sycl::accessor<unsigned char, 1, sycl::access::mode::write>>(channels, inacc, outacc);
+                auto kernel = vn::ThresholdKernel<sycl::accessor<unsigned char, 1, sycl::access::mode::read>, sycl::accessor<unsigned char, 1, sycl::access::mode::write>, unsigned char>(channels, inacc, outacc, control, top);
 
                 cgf.parallel_for(shape, kernel);
             });

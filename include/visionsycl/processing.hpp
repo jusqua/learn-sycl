@@ -48,23 +48,23 @@ private:
     outT out;
 };
 
-template <typename inT, typename outT>
+template <typename inT, typename outT, typename T>
 class ThresholdKernel {
 public:
-    ThresholdKernel(int channels, inT& in, outT& out, int threshold = 128, int top = 255)
-        : channels(channels), in(in), out(out), threshold(threshold), top(top) {};
+    ThresholdKernel(int channels, inT& in, outT& out, T control, T top)
+        : channels(channels), in(in), out(out), control(control), top(top) {};
 
     void operator()(sycl::id<1> idx) const {
         auto i = idx[0] * channels;
 
-        out[i] = in[i] > threshold ? top : 0;
-        out[i + 1] = in[i + 1] > threshold ? top : 0;
-        out[i + 2] = in[i + 2] > threshold ? top : 0;
+        out[i] = in[i] > control ? top : 0;
+        out[i + 1] = in[i + 1] > control ? top : 0;
+        out[i + 2] = in[i + 2] > control ? top : 0;
     }
 
 private:
     int channels;
-    int threshold;
+    int control;
     int top;
     inT in;
     outT out;
