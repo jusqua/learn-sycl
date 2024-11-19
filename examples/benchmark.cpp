@@ -1,7 +1,11 @@
+#include <access/access.hpp>
+#include <buffer.hpp>
 #include <chrono>
 #include <filesystem>
 #include <iostream>
 
+#include <range.hpp>
+#include <usm.hpp>
 #include <visionsycl/image.hpp>
 #include <visionsycl/processing.hpp>
 #include <visionsycl/selector.hpp>
@@ -72,6 +76,7 @@ int main(int argc, char** argv) {
     auto output = vn::Image(input.shape[1], input.shape[0], input.channels);
     auto channels = input.channels;
     auto shape = input.length / input.channels;
+    auto shape2d = sycl::range<2>{ static_cast<size_t>(input.shape[0]), static_cast<size_t>(input.shape[1]) };
 
     auto inptr = sycl::malloc_device<uint8_t>(input.length, queue);
     auto outptr = sycl::malloc_device<uint8_t>(output.length, queue);
@@ -224,6 +229,99 @@ int main(int argc, char** argv) {
 
             queue.wait_and_throw();
         };
+        title = "buffer";
+        perform_benchmark(title, rounds, f);
+        buffer_save_image(get_filepath(group, title, inpath, outpath));
+    }
+    std::cout << std::endl;
+
+    group = "erode";
+    constexpr unsigned char erode_mask[] = { 0, 1, 0, 1, 1, 1, 0, 1, 0 };
+    constexpr int erode_mask_length = 9;
+    constexpr int erode_mask_width = 3;
+    constexpr int erode_mask_height = 3;
+    constexpr unsigned char erode_max = 255;
+    std::cout << group << std::endl;
+    {
+        auto& mask = erode_mask;
+        auto& max = erode_max;
+        int midx = erode_mask_width / 2;
+        int midy = erode_mask_height / 2;
+
+        auto f = [&] {
+            for (int row = 0; row < input.shape[0]; ++row) {
+                for (int col = 0; col < input.shape[1]; ++col) {
+                    int counter = 0;
+                    unsigned char r = max, g = max, b = max;
+                    float sum = r + g + b;
+
+                    for (int i = -midx; i <= midx; ++i) {
+                        for (int j = -midy; j <= midy; ++j, ++counter) {
+                            auto x = col + i;
+                            auto y = row + j;
+
+                            if (x >= 0 && x < input.shape[1] && y >= 0 && y < input.shape[0]) {
+                                auto pos = (y * input.shape[1] + x) * channels;
+                                float new_sum = input.data[pos] + input.data[pos + 1] + input.data[pos + 2];
+                                if (mask[counter] != 0 && sum > new_sum) {
+                                    r = input.data[pos];
+                                    g = input.data[pos + 1];
+                                    b = input.data[pos + 2];
+                                    sum = new_sum;
+                                }
+                            }
+                        }
+                    }
+
+                    auto pos = (row * input.shape[1] + col) * channels;
+                    output.data[pos] = r;
+                    output.data[pos + 1] = g;
+                    output.data[pos + 2] = b;
+                }
+            }
+        };
+
+        title = "host";
+        perform_benchmark(title, rounds, f);
+        host_save_image(get_filepath(group, title, inpath, outpath));
+    }
+    {
+        auto maskptr = sycl::malloc_device<unsigned char>(erode_mask_length, queue);
+        queue.memcpy(maskptr, erode_mask, erode_mask_length);
+        auto& mask_width = erode_mask_width;
+        auto& mask_height = erode_mask_height;
+        auto& max = erode_max;
+
+        auto f = [&] {
+            auto kernel = vn::ErodeKernel<unsigned char*, unsigned char*, unsigned char*, unsigned char>(channels, inptr, outptr, maskptr, mask_width, mask_height, max);
+            queue.parallel_for(shape2d, kernel);
+            queue.wait_and_throw();
+        };
+
+        title = "usm";
+        perform_benchmark(title, rounds, f);
+        usm_save_image(get_filepath(group, title, inpath, outpath));
+        sycl::free(maskptr, queue);
+    }
+    {
+        auto mask = sycl::buffer<unsigned char>{ erode_mask, erode_mask_length };
+        auto& mask_width = erode_mask_width;
+        auto& mask_height = erode_mask_height;
+        auto& max = erode_max;
+
+        auto f = [&] {
+            queue.submit([&](sycl::handler& cgf) {
+                auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
+                auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
+                auto maskacc = sycl::accessor(outbuf, cgf, sycl::read_only);
+                auto kernel = vn::ErodeKernel<sycl::accessor<unsigned char, 1, sycl::access::mode::read>, sycl::accessor<unsigned char, 1, sycl::access::mode::write>, sycl::accessor<unsigned char, 1, sycl::access::mode::read>, unsigned char>(channels, inacc, outacc, maskacc, mask_width, mask_height, max);
+
+                cgf.parallel_for(shape2d, kernel);
+            });
+
+            queue.wait_and_throw();
+        };
+
         title = "buffer";
         perform_benchmark(title, rounds, f);
         buffer_save_image(get_filepath(group, title, inpath, outpath));
