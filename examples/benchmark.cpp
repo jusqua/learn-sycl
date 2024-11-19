@@ -193,10 +193,9 @@ int main(int argc, char** argv) {
         auto top = 255;
         auto f = [&input, &output, &threshold, &top] {
             for (size_t i = 0; i < input.length; i += input.channels) {
-                auto bin = (input.data[i] + input.data[i + 1] + input.data[i + 2]) / 3 > threshold ? top : 0;
-                output.data[i] = bin;
-                output.data[i + 1] = bin;
-                output.data[i + 2] = bin;
+                output.data[i] = input.data[i] > threshold ? top : 0;
+                output.data[i + 1] = input.data[i + 1] > threshold ? top : 0;
+                output.data[i + 2] = input.data[i + 2] > threshold ? top : 0;
             }
         };
         title = "host";

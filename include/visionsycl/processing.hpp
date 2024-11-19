@@ -51,10 +51,9 @@ public:
     void operator()(sycl::id<1> idx) const {
         auto i = idx[0] * channels;
 
-        auto bin = (in[i] + in[i + 1] + in[i + 2]) / 3 > threshold ? top : 0;
-        out[i] = bin;
-        out[i + 1] = bin;
-        out[i + 2] = bin;
+        out[i] = in[i] > threshold ? top : 0;
+        out[i + 1] = in[i + 1] > threshold ? top : 0;
+        out[i + 2] = in[i + 2] > threshold ? top : 0;
     }
 
 private:
