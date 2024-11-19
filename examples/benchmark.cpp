@@ -1,11 +1,7 @@
-#include <access/access.hpp>
-#include <buffer.hpp>
 #include <chrono>
 #include <filesystem>
 #include <iostream>
 
-#include <range.hpp>
-#include <usm.hpp>
 #include <visionsycl/image.hpp>
 #include <visionsycl/processing.hpp>
 #include <visionsycl/selector.hpp>
