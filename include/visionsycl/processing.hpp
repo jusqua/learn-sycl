@@ -1,16 +1,15 @@
 #ifndef VISIONSYCL_PROCESSING_HPP
 #define VISIONSYCL_PROCESSING_HPP
 
-#include <accessor.hpp>
 #include <visionsycl/image.hpp>
 #include <sycl/sycl.hpp>
 
 namespace visionsycl {
 
-template <typename inT, typename outT>
+template <typename inT, typename outT, typename T>
 class InversionKernel {
 public:
-    InversionKernel(int channels, inT& in, outT& out) : channels(channels), in(in), out(out) {};
+    InversionKernel(int channels, inT& in, outT& out, T mask) : channels(channels), in(in), out(out), mask(mask) {};
     void operator()(sycl::id<1> idx) const {
         auto i = idx[0] * channels;
 
@@ -20,10 +19,10 @@ public:
     }
 
 private:
-    constexpr static unsigned char mask = 255;
     int channels;
     inT in;
     outT out;
+    T mask;
 };
 
 template <typename inT, typename outT>

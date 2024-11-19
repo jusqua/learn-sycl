@@ -112,12 +112,10 @@ int main(int argc, char** argv) {
         host_save_image(get_filepath(group, title, inpath, outpath));
     }
     {
+        constexpr unsigned char mask = 255;
         auto f = [&queue, &channels, &shape, &inptr, &outptr] {
-            queue.submit([&](sycl::handler& cgf) {
-                auto kernel = vn::InversionKernel<unsigned char*, unsigned char*>(channels, inptr, outptr);
-
-                cgf.parallel_for(shape, kernel);
-            });
+            auto kernel = vn::InversionKernel<unsigned char*, unsigned char*, unsigned char>(channels, inptr, outptr, mask);
+            queue.parallel_for(shape, kernel);
             queue.wait_and_throw();
         };
         title = "usm";
@@ -125,11 +123,12 @@ int main(int argc, char** argv) {
         host_save_image(get_filepath(group, title, inpath, outpath));
     }
     {
+        constexpr unsigned char mask = 255;
         auto f = [&queue, &channels, &shape, &inbuf, &outbuf] {
             queue.submit([&](sycl::handler& cgf) {
                 auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
                 auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
-                auto kernel = vn::InversionKernel<sycl::accessor<unsigned char, 1, sycl::access::mode::read>, sycl::accessor<unsigned char, 1, sycl::access::mode::write>>(channels, inacc, outacc);
+                auto kernel = vn::InversionKernel<sycl::accessor<unsigned char, 1, sycl::access::mode::read>, sycl::accessor<unsigned char, 1, sycl::access::mode::write>, unsigned char>(channels, inacc, outacc, mask);
 
                 cgf.parallel_for(shape, kernel);
             });
