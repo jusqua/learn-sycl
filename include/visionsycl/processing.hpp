@@ -9,7 +9,9 @@ namespace visionsycl {
 template <typename inT, typename outT, typename T>
 class InversionKernel {
 public:
-    InversionKernel(int channels, inT& in, outT& out, T mask) : channels(channels), in(in), out(out), mask(mask) {};
+    InversionKernel(int channels, inT& in, outT& out, T mask)
+        : channels(channels), in(in), out(out), mask(mask) {};
+
     void operator()(sycl::id<1> idx) const {
         auto i = idx[0] * channels;
 
@@ -28,7 +30,9 @@ private:
 template <typename inT, typename outT>
 class GrayscaleKernel {
 public:
-    GrayscaleKernel(int channels, inT& in, outT& out) : channels(channels), in(in), out(out) {};
+    GrayscaleKernel(int channels, inT& in, outT& out)
+        : channels(channels), in(in), out(out) {};
+
     void operator()(sycl::id<1> idx) const {
         auto i = idx[0] * channels;
 
@@ -47,7 +51,9 @@ private:
 template <typename inT, typename outT>
 class ThresholdKernel {
 public:
-    ThresholdKernel(int channels, inT& in, outT& out, int threshold = 128, int top = 255) : channels(channels), in(in), out(out), threshold(threshold), top(top) {};
+    ThresholdKernel(int channels, inT& in, outT& out, int threshold = 128, int top = 255)
+        : channels(channels), in(in), out(out), threshold(threshold), top(top) {};
+
     void operator()(sycl::id<1> idx) const {
         auto i = idx[0] * channels;
 
@@ -67,7 +73,9 @@ private:
 template <typename inT, typename outT, typename maskT, typename T>
 class ErodeKernel {
 public:
-    ErodeKernel(int channels, inT& in, outT& out, maskT& mask, int mask_width, int mask_height, int max) : channels(channels), in(in), out(out), mask(mask), midy(mask_height / 2), midx(mask_width / 2), max(max) {};
+    ErodeKernel(int channels, inT& in, outT& out, maskT& mask, int mask_width, int mask_height, int max)
+        : channels(channels), in(in), out(out), mask(mask), midy(mask_height / 2), midx(mask_width / 2), max(max) {};
+
     void operator()(sycl::item<2> item) const {
         auto col = item.get_id(1);
         auto row = item.get_id(0);
@@ -114,7 +122,9 @@ private:
 template <typename inT, typename outT, typename maskT, typename T>
 class DilateKernel {
 public:
-    DilateKernel(int channels, inT& in, outT& out, maskT& mask, int mask_width, int mask_height, int min) : channels(channels), in(in), out(out), mask(mask), midy(mask_height / 2), midx(mask_width / 2), min(min) {};
+    DilateKernel(int channels, inT& in, outT& out, maskT& mask, int mask_width, int mask_height, int min)
+        : channels(channels), in(in), out(out), mask(mask), midy(mask_height / 2), midx(mask_width / 2), min(min) {};
+
     void operator()(sycl::item<2> item) const {
         auto col = item.get_id(1);
         auto row = item.get_id(0);
