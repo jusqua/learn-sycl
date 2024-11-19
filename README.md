@@ -103,6 +103,6 @@ Using `bash`:
 
 After [set up your environment](#setup-environment), in this project root, run:
 ```sh
-cmake --preset linux # or windows
+cmake --preset linux-release # or windows-release, use debug in development
 cmake --build build
 ```
