@@ -75,6 +75,8 @@ int main(int argc, char** argv) {
 
     auto inptr = sycl::malloc_device<uint8_t>(input.length, queue);
     auto outptr = sycl::malloc_device<uint8_t>(output.length, queue);
+    queue.memcpy(inptr, input.data, output.length).wait();
+
     auto inbuf = sycl::buffer<uint8_t, 1>{ input.data, input.length };
     auto outbuf = sycl::buffer<uint8_t, 1>{ output.data, output.length };
 
@@ -120,7 +122,7 @@ int main(int argc, char** argv) {
         };
         title = "usm";
         perform_benchmark(title, rounds, f);
-        host_save_image(get_filepath(group, title, inpath, outpath));
+        usm_save_image(get_filepath(group, title, inpath, outpath));
     }
     {
         constexpr unsigned char mask = 255;
@@ -137,7 +139,7 @@ int main(int argc, char** argv) {
         };
         title = "buffer";
         perform_benchmark(title, rounds, f);
-        host_save_image(get_filepath(group, title, inpath, outpath));
+        buffer_save_image(get_filepath(group, title, inpath, outpath));
     }
     std::cout << std::endl;
 
@@ -159,16 +161,12 @@ int main(int argc, char** argv) {
     {
         auto f = [&queue, &channels, &shape, &inptr, &outptr] {
             auto kernel = vn::GrayscaleKernel<unsigned char*, unsigned char*>(channels, inptr, outptr);
-            queue.submit([&](sycl::handler& cgf) {
-                auto kernel = vn::GrayscaleKernel<unsigned char*, unsigned char*>(channels, inptr, outptr);
-
-                cgf.parallel_for(shape, kernel);
-            });
+            queue.parallel_for(shape, kernel);
             queue.wait_and_throw();
         };
         title = "usm";
         perform_benchmark(title, rounds, f);
-        host_save_image(get_filepath(group, title, inpath, outpath));
+        usm_save_image(get_filepath(group, title, inpath, outpath));
     }
     {
         auto f = [&queue, &channels, &shape, &inbuf, &outbuf] {
@@ -184,7 +182,7 @@ int main(int argc, char** argv) {
         };
         title = "buffer";
         perform_benchmark(title, rounds, f);
-        host_save_image(get_filepath(group, title, inpath, outpath));
+        buffer_save_image(get_filepath(group, title, inpath, outpath));
     }
     std::cout << std::endl;
 
@@ -192,7 +190,7 @@ int main(int argc, char** argv) {
     std::cout << group << std::endl;
     {
         auto threshold = 128;
-        auto top = 128;
+        auto top = 255;
         auto f = [&input, &output, &threshold, &top] {
             for (size_t i = 0; i < input.length; i += input.channels) {
                 auto bin = (input.data[i] + input.data[i + 1] + input.data[i + 2]) / 3 > threshold ? top : 0;
@@ -208,16 +206,12 @@ int main(int argc, char** argv) {
     {
         auto f = [&queue, &channels, &shape, &inptr, &outptr] {
             auto kernel = vn::ThresholdKernel<unsigned char*, unsigned char*>(channels, inptr, outptr);
-            queue.submit([&](sycl::handler& cgf) {
-                auto kernel = vn::ThresholdKernel<unsigned char*, unsigned char*>(channels, inptr, outptr);
-
-                cgf.parallel_for(shape, kernel);
-            });
+            queue.parallel_for(shape, kernel);
             queue.wait_and_throw();
         };
         title = "usm";
         perform_benchmark(title, rounds, f);
-        host_save_image(get_filepath(group, title, inpath, outpath));
+        usm_save_image(get_filepath(group, title, inpath, outpath));
     }
     {
         auto f = [&queue, &channels, &shape, &inbuf, &outbuf] {
@@ -233,9 +227,12 @@ int main(int argc, char** argv) {
         };
         title = "buffer";
         perform_benchmark(title, rounds, f);
-        host_save_image(get_filepath(group, title, inpath, outpath));
+        buffer_save_image(get_filepath(group, title, inpath, outpath));
     }
     std::cout << std::endl;
+
+    sycl::free(inptr, queue);
+    sycl::free(outptr, queue);
 
     return 0;
 }
