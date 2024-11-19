@@ -101,8 +101,13 @@ Using `bash`:
 
 ## Building
 
-After [set up your environment](#setup-environment), in this project root, run:
+After [set up your environment](#setup-environment), select a preset triplet:
+- `os`: `linux` or `windows`
+- `gpu`: `intel`, `amd` or `nvidia`
+- `build`: `release` or `debug`
+
 ```sh
-cmake --preset linux-release # or windows-release, use debug in development
+# cmake --preset linux-intel-release
+cmake --preset {os}-{gpu}-{build}
 cmake --build build
 ```
