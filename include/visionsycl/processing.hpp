@@ -6,11 +6,11 @@
 
 namespace visionsycl {
 
-template <typename inT, typename outT, typename T>
+template <typename inT, typename outT>
 class InversionKernel {
 public:
-    InversionKernel(int channels, inT& in, outT& out, T mask)
-        : channels(channels), in(in), out(out), mask(mask) {};
+    InversionKernel(int channels, inT& in, outT& out)
+        : channels(channels), in(in), out(out) {};
 
     void operator()(sycl::id<1> idx) const {
         auto i = idx[0] * channels;
@@ -24,7 +24,7 @@ private:
     int channels;
     inT in;
     outT out;
-    T mask;
+    static constexpr uint8_t mask = 255;
 };
 
 template <typename inT, typename outT>

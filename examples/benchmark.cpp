@@ -2,8 +2,6 @@
 #include <filesystem>
 #include <iostream>
 
-#include <nd_range.hpp>
-#include <range.hpp>
 #include <visionsycl/image.hpp>
 #include <visionsycl/processing.hpp>
 #include <visionsycl/selector.hpp>
@@ -66,8 +64,8 @@ int main(int argc, char** argv) {
     auto usm_compatible = queue.get_device().has(sycl::aspect::usm_device_allocations);
 
     // Image shape definitions
-    auto shape = input.length / input.channels;
-    auto shape2d = sycl::range<2>{ static_cast<size_t>(input.shape[0]), static_cast<size_t>(input.shape[1]) };
+    auto linear_shape = input.length / input.channels;
+    auto bidimensional_shape = sycl::range<2>{ static_cast<size_t>(input.shape[0]), static_cast<size_t>(input.shape[1]) };
 
     // USM image memory allocation
     uint8_t* inptr;
@@ -108,14 +106,13 @@ int main(int argc, char** argv) {
     // Benchmarks
     group = "inversion";
     std::cout << group << std::endl;
-    constexpr unsigned char inversion_mask = 255;
     {
-        auto mask = inversion_mask;
+        constexpr uint8_t mask = 255;
         auto f = [&] {
             for (size_t i = 0; i < input.length; i += input.channels) {
-                output.data[i] = 255 - input.data[i];
-                output.data[i + 1] = 255 - input.data[i + 1];
-                output.data[i + 2] = 255 - input.data[i + 2];
+                output.data[i] = mask - input.data[i];
+                output.data[i + 1] = mask - input.data[i + 1];
+                output.data[i + 2] = mask - input.data[i + 2];
             }
         };
         title = "host";
@@ -123,10 +120,9 @@ int main(int argc, char** argv) {
         host_save_image(get_filepath(group, title, inpath, outpath));
     }
     if (usm_compatible) {
-        auto mask = inversion_mask;
         auto f = [&] {
-            auto kernel = vn::InversionKernel<decltype(inptr), decltype(outptr), decltype(mask)>(channels, inptr, outptr, mask);
-            queue.parallel_for(shape, kernel);
+            auto kernel = vn::InversionKernel<decltype(inptr), decltype(outptr)>(channels, inptr, outptr);
+            queue.parallel_for(linear_shape, kernel);
             queue.wait_and_throw();
         };
         title = "usm";
@@ -134,14 +130,13 @@ int main(int argc, char** argv) {
         usm_save_image(get_filepath(group, title, inpath, outpath));
     }
     {
-        auto mask = inversion_mask;
         auto f = [&] {
             queue.submit([&](sycl::handler& cgf) {
                 auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
                 auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
-                auto kernel = vn::InversionKernel<decltype(inacc), decltype(outacc), decltype(mask)>(channels, inacc, outacc, mask);
+                auto kernel = vn::InversionKernel<decltype(inacc), decltype(outacc)>(channels, inacc, outacc);
 
-                cgf.parallel_for(shape, kernel);
+                cgf.parallel_for(linear_shape, kernel);
             });
 
             queue.wait_and_throw();
@@ -170,7 +165,7 @@ int main(int argc, char** argv) {
     if (usm_compatible) {
         auto f = [&] {
             auto kernel = vn::GrayscaleKernel<decltype(inptr), decltype(outptr)>(channels, inptr, outptr);
-            queue.parallel_for(shape, kernel);
+            queue.parallel_for(linear_shape, kernel);
             queue.wait_and_throw();
         };
         title = "usm";
@@ -184,7 +179,7 @@ int main(int argc, char** argv) {
                 auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
                 auto kernel = vn::GrayscaleKernel<decltype(inacc), decltype(outacc)>(channels, inacc, outacc);
 
-                cgf.parallel_for(shape, kernel);
+                cgf.parallel_for(linear_shape, kernel);
             });
 
             queue.wait_and_throw();
@@ -200,13 +195,11 @@ int main(int argc, char** argv) {
     constexpr unsigned char threshold_top = 255;
     std::cout << group << std::endl;
     {
-        auto control = threshold_control;
-        auto top = threshold_top;
         auto f = [&] {
             for (size_t i = 0; i < input.length; i += input.channels) {
-                output.data[i] = input.data[i] > control ? top : 0;
-                output.data[i + 1] = input.data[i + 1] > control ? top : 0;
-                output.data[i + 2] = input.data[i + 2] > control ? top : 0;
+                output.data[i] = input.data[i] > threshold_control ? threshold_top : 0;
+                output.data[i + 1] = input.data[i + 1] > threshold_control ? threshold_top : 0;
+                output.data[i + 2] = input.data[i + 2] > threshold_control ? threshold_top : 0;
             }
         };
         title = "host";
@@ -214,11 +207,9 @@ int main(int argc, char** argv) {
         host_save_image(get_filepath(group, title, inpath, outpath));
     }
     if (usm_compatible) {
-        auto control = threshold_control;
-        auto top = threshold_top;
         auto f = [&] {
-            auto kernel = vn::ThresholdKernel<decltype(inptr), decltype(outptr), decltype(control)>(channels, inptr, outptr, control, top);
-            queue.parallel_for(shape, kernel);
+            auto kernel = vn::ThresholdKernel<decltype(inptr), decltype(outptr), decltype(threshold_control)>(channels, inptr, outptr, threshold_control, threshold_top);
+            queue.parallel_for(linear_shape, kernel);
             queue.wait_and_throw();
         };
         title = "usm";
@@ -226,15 +217,13 @@ int main(int argc, char** argv) {
         usm_save_image(get_filepath(group, title, inpath, outpath));
     }
     {
-        auto control = threshold_control;
-        auto top = threshold_top;
         auto f = [&] {
             queue.submit([&](sycl::handler& cgf) {
                 auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
                 auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
-                auto kernel = vn::ThresholdKernel<decltype(inacc), decltype(outacc), decltype(control)>(channels, inacc, outacc, control, top);
+                auto kernel = vn::ThresholdKernel<decltype(inacc), decltype(outacc), decltype(threshold_control)>(channels, inacc, outacc, threshold_control, threshold_top);
 
-                cgf.parallel_for(shape, kernel);
+                cgf.parallel_for(linear_shape, kernel);
             });
 
             queue.wait_and_throw();
@@ -253,8 +242,6 @@ int main(int argc, char** argv) {
     constexpr unsigned char erode_max = 255;
     std::cout << group << std::endl;
     {
-        auto mask = erode_mask;
-        auto max = erode_max;
         int midx = erode_mask_width / 2;
         int midy = erode_mask_height / 2;
 
@@ -262,7 +249,7 @@ int main(int argc, char** argv) {
             for (int row = 0; row < input.shape[0]; ++row) {
                 for (int col = 0; col < input.shape[1]; ++col) {
                     int counter = 0;
-                    unsigned char r = max, g = max, b = max;
+                    unsigned char r = erode_max, g = erode_max, b = erode_max;
                     float sum = r + g + b;
 
                     for (int i = -midx; i <= midx; ++i) {
@@ -273,7 +260,7 @@ int main(int argc, char** argv) {
                             if (x >= 0 && x < input.shape[1] && y >= 0 && y < input.shape[0]) {
                                 auto pos = (y * input.shape[1] + x) * channels;
                                 float new_sum = input.data[pos] + input.data[pos + 1] + input.data[pos + 2];
-                                if (mask[counter] != 0 && sum > new_sum) {
+                                if (erode_mask[counter] != 0 && sum > new_sum) {
                                     r = input.data[pos];
                                     g = input.data[pos + 1];
                                     b = input.data[pos + 2];
@@ -296,15 +283,12 @@ int main(int argc, char** argv) {
         host_save_image(get_filepath(group, title, inpath, outpath));
     }
     if (usm_compatible) {
-        auto maskptr = sycl::malloc_device<unsigned char>(erode_mask_length, queue);
+        auto maskptr = sycl::malloc_device<uint8_t>(erode_mask_length, queue);
         queue.memcpy(maskptr, erode_mask, erode_mask_length);
-        auto mask_width = erode_mask_width;
-        auto mask_height = erode_mask_height;
-        auto max = erode_max;
 
         auto f = [&] {
-            auto kernel = vn::ErodeKernel<decltype(inptr), decltype(outptr), decltype(maskptr), decltype(max)>(channels, inptr, outptr, maskptr, mask_width, mask_height, max);
-            queue.parallel_for(shape2d, kernel);
+            auto kernel = vn::ErodeKernel<decltype(inptr), decltype(outptr), decltype(maskptr), decltype(erode_max)>(channels, inptr, outptr, maskptr, erode_mask_width, erode_mask_height, erode_max);
+            queue.parallel_for(bidimensional_shape, kernel);
             queue.wait_and_throw();
         };
 
@@ -315,18 +299,15 @@ int main(int argc, char** argv) {
     }
     {
         auto mask = sycl::buffer<unsigned char>{ erode_mask, erode_mask_length };
-        auto mask_width = erode_mask_width;
-        auto mask_height = erode_mask_height;
-        auto max = erode_max;
 
         auto f = [&] {
             queue.submit([&](sycl::handler& cgf) {
                 auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
                 auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
                 auto maskacc = sycl::accessor(outbuf, cgf, sycl::read_only);
-                auto kernel = vn::ErodeKernel<decltype(inacc), decltype(outacc), decltype(maskacc), decltype(max)>(channels, inacc, outacc, maskacc, mask_width, mask_height, max);
+                auto kernel = vn::ErodeKernel<decltype(inacc), decltype(outacc), decltype(maskacc), decltype(erode_max)>(channels, inacc, outacc, maskacc, erode_mask_width, erode_mask_height, erode_max);
 
-                cgf.parallel_for(shape2d, kernel);
+                cgf.parallel_for(bidimensional_shape, kernel);
             });
 
             queue.wait_and_throw();
@@ -346,8 +327,6 @@ int main(int argc, char** argv) {
     constexpr unsigned char dilate_min = 0;
     std::cout << group << std::endl;
     {
-        auto mask = dilate_mask;
-        auto min = dilate_min;
         int midx = dilate_mask_width / 2;
         int midy = dilate_mask_height / 2;
 
@@ -355,7 +334,7 @@ int main(int argc, char** argv) {
             for (int row = 0; row < input.shape[0]; ++row) {
                 for (int col = 0; col < input.shape[1]; ++col) {
                     int counter = 0;
-                    unsigned char r = min, g = min, b = min;
+                    unsigned char r = dilate_min, g = dilate_min, b = dilate_min;
                     float sum = r + g + b;
 
                     for (int i = -midx; i <= midx; ++i) {
@@ -366,7 +345,7 @@ int main(int argc, char** argv) {
                             if (x >= 0 && x < input.shape[1] && y >= 0 && y < input.shape[0]) {
                                 auto pos = (y * input.shape[1] + x) * channels;
                                 float new_sum = input.data[pos] + input.data[pos + 1] + input.data[pos + 2];
-                                if (mask[counter] != 0 && sum < new_sum) {
+                                if (dilate_mask[counter] != 0 && sum < new_sum) {
                                     r = input.data[pos];
                                     g = input.data[pos + 1];
                                     b = input.data[pos + 2];
@@ -389,15 +368,12 @@ int main(int argc, char** argv) {
         host_save_image(get_filepath(group, title, inpath, outpath));
     }
     if (usm_compatible) {
-        auto maskptr = sycl::malloc_device<unsigned char>(dilate_mask_length, queue);
+        auto maskptr = sycl::malloc_device<uint8_t>(dilate_mask_length, queue);
         queue.memcpy(maskptr, dilate_mask, dilate_mask_length);
-        auto mask_width = dilate_mask_width;
-        auto mask_height = dilate_mask_height;
-        auto min = dilate_min;
 
         auto f = [&] {
-            auto kernel = vn::DilateKernel<decltype(inptr), decltype(outptr), decltype(maskptr), decltype(min)>(channels, inptr, outptr, maskptr, mask_width, mask_height, min);
-            queue.parallel_for(shape2d, kernel);
+            auto kernel = vn::DilateKernel<decltype(inptr), decltype(outptr), decltype(maskptr), decltype(dilate_min)>(channels, inptr, outptr, maskptr, dilate_mask_width, dilate_mask_height, dilate_min);
+            queue.parallel_for(bidimensional_shape, kernel);
             queue.wait_and_throw();
         };
 
@@ -408,18 +384,15 @@ int main(int argc, char** argv) {
     }
     {
         auto mask = sycl::buffer<unsigned char>{ dilate_mask, dilate_mask_length };
-        auto mask_width = dilate_mask_width;
-        auto mask_height = dilate_mask_height;
-        auto min = dilate_min;
 
         auto f = [&] {
             queue.submit([&](sycl::handler& cgf) {
                 auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
                 auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
                 auto maskacc = sycl::accessor(outbuf, cgf, sycl::read_only);
-                auto kernel = vn::DilateKernel<decltype(inacc), decltype(outacc), decltype(maskacc), decltype(min)>(channels, inacc, outacc, maskacc, mask_width, mask_height, min);
+                auto kernel = vn::DilateKernel<decltype(inacc), decltype(outacc), decltype(maskacc), decltype(dilate_min)>(channels, inacc, outacc, maskacc, dilate_mask_width, dilate_mask_height, dilate_min);
 
-                cgf.parallel_for(shape2d, kernel);
+                cgf.parallel_for(bidimensional_shape, kernel);
             });
 
             queue.wait_and_throw();
