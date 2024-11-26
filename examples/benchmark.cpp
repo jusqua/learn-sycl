@@ -95,10 +95,19 @@ int main(int argc, char** argv) {
         vn::save_image_as(filepath.c_str(), output);
     };
 
-    std::cout << "Device:        " << queue.get_device().get_info<sycl::info::device::name>() << std::endl
-              << "Platform:      " << queue.get_device().get_platform().get_info<sycl::info::platform::name>() << std::endl
-              << "Compute Units: " << queue.get_device().get_info<sycl::info::device::max_compute_units>() << std::endl
-              << std::endl;
+    auto subgroup_sizes = queue.get_device().get_info<sycl::info::device::sub_group_sizes>();
+    auto subgroup = subgroup_sizes.back();
+    auto usm_compatible = queue.get_device().has(sycl::aspect::usm_device_allocations);
+
+    std::cout << "Device: " << queue.get_device().get_info<sycl::info::device::name>() << std::endl;
+    std::cout << "Platform: " << queue.get_device().get_platform().get_info<sycl::info::platform::name>() << std::endl;
+    std::cout << "Compute Units: " << queue.get_device().get_info<sycl::info::device::max_compute_units>() << std::endl;
+    std::cout << "Possible Subgroup Sizes: ";
+    for (auto size : subgroup_sizes) std::cout << size << " ";
+    std::cout << std::endl;
+    std::cout << "Selected Subgroup Size: " << subgroup << std::endl;
+    std::cout << "USM Memory Model Compatible: " << (usm_compatible ? "Yes" : "No, desabling benchmarks") << std::endl;
+    std::cout << std::endl;
 
     group = "inversion";
     std::cout << group << std::endl;
@@ -116,10 +125,10 @@ int main(int argc, char** argv) {
         perform_benchmark(title, rounds, f);
         host_save_image(get_filepath(group, title, inpath, outpath));
     }
-    {
+    if (usm_compatible) {
         auto& mask = inversion_mask;
         auto f = [&] {
-            auto kernel = vn::InversionKernel<unsigned char*, unsigned char*, unsigned char>(channels, inptr, outptr, mask);
+            auto kernel = vn::InversionKernel<decltype(inptr), decltype(outptr), decltype(mask)>(channels, inptr, outptr, mask);
             queue.parallel_for(shape, kernel);
             queue.wait_and_throw();
         };
@@ -133,7 +142,7 @@ int main(int argc, char** argv) {
             queue.submit([&](sycl::handler& cgf) {
                 auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
                 auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
-                auto kernel = vn::InversionKernel<sycl::accessor<unsigned char, 1, sycl::access::mode::read>, sycl::accessor<unsigned char, 1, sycl::access::mode::write>, unsigned char>(channels, inacc, outacc, mask);
+                auto kernel = vn::InversionKernel<decltype(inacc), decltype(outacc), decltype(mask)>(channels, inacc, outacc, mask);
 
                 cgf.parallel_for(shape, kernel);
             });
@@ -161,9 +170,9 @@ int main(int argc, char** argv) {
         perform_benchmark(title, rounds, f);
         host_save_image(get_filepath(group, title, inpath, outpath));
     }
-    {
+    if (usm_compatible) {
         auto f = [&] {
-            auto kernel = vn::GrayscaleKernel<unsigned char*, unsigned char*>(channels, inptr, outptr);
+            auto kernel = vn::GrayscaleKernel<decltype(inptr), decltype(outptr)>(channels, inptr, outptr);
             queue.parallel_for(shape, kernel);
             queue.wait_and_throw();
         };
@@ -176,7 +185,7 @@ int main(int argc, char** argv) {
             queue.submit([&](sycl::handler& cgf) {
                 auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
                 auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
-                auto kernel = vn::GrayscaleKernel<sycl::accessor<unsigned char, 1, sycl::access::mode::read>, sycl::accessor<unsigned char, 1, sycl::access::mode::write>>(channels, inacc, outacc);
+                auto kernel = vn::GrayscaleKernel<decltype(inacc), decltype(outacc)>(channels, inacc, outacc);
 
                 cgf.parallel_for(shape, kernel);
             });
@@ -207,11 +216,11 @@ int main(int argc, char** argv) {
         perform_benchmark(title, rounds, f);
         host_save_image(get_filepath(group, title, inpath, outpath));
     }
-    {
+    if (usm_compatible) {
         auto& control = threshold_control;
         auto& top = threshold_top;
         auto f = [&] {
-            auto kernel = vn::ThresholdKernel<unsigned char*, unsigned char*, unsigned char>(channels, inptr, outptr, control, top);
+            auto kernel = vn::ThresholdKernel<decltype(inptr), decltype(outptr), decltype(control)>(channels, inptr, outptr, control, top);
             queue.parallel_for(shape, kernel);
             queue.wait_and_throw();
         };
@@ -226,7 +235,7 @@ int main(int argc, char** argv) {
             queue.submit([&](sycl::handler& cgf) {
                 auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
                 auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
-                auto kernel = vn::ThresholdKernel<sycl::accessor<unsigned char, 1, sycl::access::mode::read>, sycl::accessor<unsigned char, 1, sycl::access::mode::write>, unsigned char>(channels, inacc, outacc, control, top);
+                auto kernel = vn::ThresholdKernel<decltype(inacc), decltype(outacc), decltype(control)>(channels, inacc, outacc, control, top);
 
                 cgf.parallel_for(shape, kernel);
             });
@@ -289,7 +298,7 @@ int main(int argc, char** argv) {
         perform_benchmark(title, rounds, f);
         host_save_image(get_filepath(group, title, inpath, outpath));
     }
-    {
+    if (usm_compatible) {
         auto maskptr = sycl::malloc_device<unsigned char>(erode_mask_length, queue);
         queue.memcpy(maskptr, erode_mask, erode_mask_length);
         auto& mask_width = erode_mask_width;
@@ -297,7 +306,7 @@ int main(int argc, char** argv) {
         auto& max = erode_max;
 
         auto f = [&] {
-            auto kernel = vn::ErodeKernel<unsigned char*, unsigned char*, unsigned char*, unsigned char>(channels, inptr, outptr, maskptr, mask_width, mask_height, max);
+            auto kernel = vn::ErodeKernel<decltype(inptr), decltype(outptr), decltype(maskptr), decltype(max)>(channels, inptr, outptr, maskptr, mask_width, mask_height, max);
             queue.parallel_for(shape2d, kernel);
             queue.wait_and_throw();
         };
@@ -318,7 +327,7 @@ int main(int argc, char** argv) {
                 auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
                 auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
                 auto maskacc = sycl::accessor(outbuf, cgf, sycl::read_only);
-                auto kernel = vn::ErodeKernel<sycl::accessor<unsigned char, 1, sycl::access::mode::read>, sycl::accessor<unsigned char, 1, sycl::access::mode::write>, sycl::accessor<unsigned char, 1, sycl::access::mode::read>, unsigned char>(channels, inacc, outacc, maskacc, mask_width, mask_height, max);
+                auto kernel = vn::ErodeKernel<decltype(inacc), decltype(outacc), decltype(maskacc), decltype(max)>(channels, inacc, outacc, maskacc, mask_width, mask_height, max);
 
                 cgf.parallel_for(shape2d, kernel);
             });
@@ -382,7 +391,7 @@ int main(int argc, char** argv) {
         perform_benchmark(title, rounds, f);
         host_save_image(get_filepath(group, title, inpath, outpath));
     }
-    {
+    if (usm_compatible) {
         auto maskptr = sycl::malloc_device<unsigned char>(dilate_mask_length, queue);
         queue.memcpy(maskptr, dilate_mask, dilate_mask_length);
         auto& mask_width = dilate_mask_width;
@@ -390,7 +399,7 @@ int main(int argc, char** argv) {
         auto& min = dilate_min;
 
         auto f = [&] {
-            auto kernel = vn::DilateKernel<unsigned char*, unsigned char*, unsigned char*, unsigned char>(channels, inptr, outptr, maskptr, mask_width, mask_height, min);
+            auto kernel = vn::DilateKernel<decltype(inptr), decltype(outptr), decltype(maskptr), decltype(min)>(channels, inptr, outptr, maskptr, mask_width, mask_height, min);
             queue.parallel_for(shape2d, kernel);
             queue.wait_and_throw();
         };
@@ -411,7 +420,7 @@ int main(int argc, char** argv) {
                 auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
                 auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
                 auto maskacc = sycl::accessor(outbuf, cgf, sycl::read_only);
-                auto kernel = vn::DilateKernel<sycl::accessor<unsigned char, 1, sycl::access::mode::read>, sycl::accessor<unsigned char, 1, sycl::access::mode::write>, sycl::accessor<unsigned char, 1, sycl::access::mode::read>, unsigned char>(channels, inacc, outacc, maskacc, mask_width, mask_height, min);
+                auto kernel = vn::DilateKernel<decltype(inacc), decltype(outacc), decltype(maskacc), decltype(min)>(channels, inacc, outacc, maskacc, mask_width, mask_height, min);
 
                 cgf.parallel_for(shape2d, kernel);
             });
