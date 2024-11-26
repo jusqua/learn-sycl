@@ -1,3 +1,9 @@
+#define SYCL_EXT_ONEAPI_BINDLESS_IMAGES 6
+#include <sycl/sycl.hpp>
+#include <ext/oneapi/bindless_images.hpp>
+#include <ext/oneapi/bindless_images_descriptor.hpp>
+#include <ext/oneapi/bindless_images_memory.hpp>
+
 #include <chrono>
 #include <filesystem>
 #include <iostream>
@@ -67,7 +73,7 @@ int main(int argc, char** argv) {
     }
 
     std::string group, title;
-    auto queue = sycl::queue{ vn::usm_selector_v };
+    auto queue = sycl::queue{};
     auto input = vn::load_image(inpath.generic_string().c_str());
     auto output = vn::Image(input.shape[1], input.shape[0], input.channels);
     auto channels = input.channels;
@@ -80,6 +86,13 @@ int main(int argc, char** argv) {
 
     auto inbuf = sycl::buffer<uint8_t, 1>{ input.data, input.length };
     auto outbuf = sycl::buffer<uint8_t, 1>{ output.data, output.length };
+
+    auto img_desc = sycl::ext::oneapi::experimental::image_descriptor{ shape, 1, sycl::image_channel_type::unsigned_int8 };
+    auto in_img_mem = sycl::ext::oneapi::experimental::image_mem(img_desc, queue);
+    auto inimg = sycl::ext::oneapi::experimental::create_image(in_img_mem, img_desc, queue);
+    auto out_img_mem = sycl::ext::oneapi::experimental::image_mem(img_desc, queue);
+    auto outimg = sycl::ext::oneapi::experimental::create_image(in_img_mem, img_desc, queue);
+    // queue.ext_oneapi_copy(inptr, inimg, img_desc).wait();
 
     auto host_save_image = [&output](std::string filepath) {
         vn::save_image_as(filepath.c_str(), output);
@@ -95,9 +108,11 @@ int main(int argc, char** argv) {
         vn::save_image_as(filepath.c_str(), output);
     };
 
-    std::cout << "Device:        " << queue.get_device().get_info<sycl::info::device::name>() << std::endl
-              << "Platform:      " << queue.get_device().get_platform().get_info<sycl::info::platform::name>() << std::endl
-              << "Compute Units: " << queue.get_device().get_info<sycl::info::device::max_compute_units>() << std::endl
+    std::cout << "Device:                   " << queue.get_device().get_info<sycl::info::device::name>() << std::endl
+              << "Platform:                 " << queue.get_device().get_platform().get_info<sycl::info::platform::name>() << std::endl
+              << "Compute Units:            " << queue.get_device().get_info<sycl::info::device::max_compute_units>() << std::endl
+              << "USM Support:              " << (queue.get_device().has(sycl::aspect::usm_device_allocations) ? "Yes" : "No") << std::endl
+              << "Bindless Image Support:   " << (queue.get_device().has(sycl::aspect::ext_oneapi_bindless_images) ? "Yes" : "No") << std::endl
               << std::endl;
 
     group = "inversion";
