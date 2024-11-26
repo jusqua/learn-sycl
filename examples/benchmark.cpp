@@ -70,10 +70,13 @@ int main(int argc, char** argv) {
     auto shape2d = sycl::range<2>{ static_cast<size_t>(input.shape[0]), static_cast<size_t>(input.shape[1]) };
 
     // USM image memory allocation
-    // TODO: Move to a separate function to avoid code crash
-    auto inptr = sycl::malloc_device<uint8_t>(input.length, queue);
-    auto outptr = sycl::malloc_device<uint8_t>(output.length, queue);
-    queue.memcpy(inptr, input.data, output.length).wait();
+    uint8_t* inptr;
+    uint8_t* outptr;
+    if (usm_compatible) {
+        inptr = sycl::malloc_device<uint8_t>(input.length, queue);
+        outptr = sycl::malloc_device<uint8_t>(output.length, queue);
+        queue.memcpy(inptr, input.data, output.length).wait();
+    }
 
     // Buffer image memory allocation
     auto inbuf = sycl::buffer<uint8_t, 1>{ input.data, input.length };
