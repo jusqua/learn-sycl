@@ -63,18 +63,11 @@ int main(int argc, char** argv) {
 
     // Device definitions
     auto queue = sycl::queue{ vn::priority_backend_selector_v };
-    auto subgroup_sizes = queue.get_device().get_info<sycl::info::device::sub_group_sizes>();
-    auto subgroup = subgroup_sizes.back();
     auto usm_compatible = queue.get_device().has(sycl::aspect::usm_device_allocations);
 
     // Image shape definitions
     auto shape = input.length / input.channels;
     auto shape2d = sycl::range<2>{ static_cast<size_t>(input.shape[0]), static_cast<size_t>(input.shape[1]) };
-
-    // Image ND shape definitions
-    auto global_work_size = sycl::range<2>{ static_cast<size_t>(input.shape[0]), static_cast<size_t>(input.shape[1]) };
-    auto local_group_size = sycl::range<2>{ subgroup, subgroup };
-    auto nd_range = sycl::nd_range<2>{ global_work_size, local_group_size };
 
     // USM image memory allocation
     // TODO: Move to a separate function to avoid code crash
@@ -106,10 +99,6 @@ int main(int argc, char** argv) {
     std::cout << "Device: " << queue.get_device().get_info<sycl::info::device::name>() << std::endl;
     std::cout << "Platform: " << queue.get_device().get_platform().get_info<sycl::info::platform::name>() << std::endl;
     std::cout << "Compute Units: " << queue.get_device().get_info<sycl::info::device::max_compute_units>() << std::endl;
-    std::cout << "Possible Subgroup Sizes: ";
-    for (auto size : subgroup_sizes) std::cout << size << " ";
-    std::cout << std::endl;
-    std::cout << "Selected Subgroup Size: " << subgroup << std::endl;
     std::cout << "USM Memory Model Compatible: " << (usm_compatible ? "Yes" : "No, desabling benchmarks") << std::endl;
     std::cout << std::endl;
 
@@ -118,7 +107,7 @@ int main(int argc, char** argv) {
     std::cout << group << std::endl;
     constexpr unsigned char inversion_mask = 255;
     {
-        auto& mask = inversion_mask;
+        auto mask = inversion_mask;
         auto f = [&] {
             for (size_t i = 0; i < input.length; i += input.channels) {
                 output.data[i] = 255 - input.data[i];
@@ -131,7 +120,7 @@ int main(int argc, char** argv) {
         host_save_image(get_filepath(group, title, inpath, outpath));
     }
     if (usm_compatible) {
-        auto& mask = inversion_mask;
+        auto mask = inversion_mask;
         auto f = [&] {
             auto kernel = vn::InversionKernel<decltype(inptr), decltype(outptr), decltype(mask)>(channels, inptr, outptr, mask);
             queue.parallel_for(shape, kernel);
@@ -142,7 +131,7 @@ int main(int argc, char** argv) {
         usm_save_image(get_filepath(group, title, inpath, outpath));
     }
     {
-        auto& mask = inversion_mask;
+        auto mask = inversion_mask;
         auto f = [&] {
             queue.submit([&](sycl::handler& cgf) {
                 auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
@@ -208,8 +197,8 @@ int main(int argc, char** argv) {
     constexpr unsigned char threshold_top = 255;
     std::cout << group << std::endl;
     {
-        auto& control = threshold_control;
-        auto& top = threshold_top;
+        auto control = threshold_control;
+        auto top = threshold_top;
         auto f = [&] {
             for (size_t i = 0; i < input.length; i += input.channels) {
                 output.data[i] = input.data[i] > control ? top : 0;
@@ -222,8 +211,8 @@ int main(int argc, char** argv) {
         host_save_image(get_filepath(group, title, inpath, outpath));
     }
     if (usm_compatible) {
-        auto& control = threshold_control;
-        auto& top = threshold_top;
+        auto control = threshold_control;
+        auto top = threshold_top;
         auto f = [&] {
             auto kernel = vn::ThresholdKernel<decltype(inptr), decltype(outptr), decltype(control)>(channels, inptr, outptr, control, top);
             queue.parallel_for(shape, kernel);
@@ -234,8 +223,8 @@ int main(int argc, char** argv) {
         usm_save_image(get_filepath(group, title, inpath, outpath));
     }
     {
-        auto& control = threshold_control;
-        auto& top = threshold_top;
+        auto control = threshold_control;
+        auto top = threshold_top;
         auto f = [&] {
             queue.submit([&](sycl::handler& cgf) {
                 auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
@@ -261,8 +250,8 @@ int main(int argc, char** argv) {
     constexpr unsigned char erode_max = 255;
     std::cout << group << std::endl;
     {
-        auto& mask = erode_mask;
-        auto& max = erode_max;
+        auto mask = erode_mask;
+        auto max = erode_max;
         int midx = erode_mask_width / 2;
         int midy = erode_mask_height / 2;
 
@@ -306,9 +295,9 @@ int main(int argc, char** argv) {
     if (usm_compatible) {
         auto maskptr = sycl::malloc_device<unsigned char>(erode_mask_length, queue);
         queue.memcpy(maskptr, erode_mask, erode_mask_length);
-        auto& mask_width = erode_mask_width;
-        auto& mask_height = erode_mask_height;
-        auto& max = erode_max;
+        auto mask_width = erode_mask_width;
+        auto mask_height = erode_mask_height;
+        auto max = erode_max;
 
         auto f = [&] {
             auto kernel = vn::ErodeKernel<decltype(inptr), decltype(outptr), decltype(maskptr), decltype(max)>(channels, inptr, outptr, maskptr, mask_width, mask_height, max);
@@ -323,9 +312,9 @@ int main(int argc, char** argv) {
     }
     {
         auto mask = sycl::buffer<unsigned char>{ erode_mask, erode_mask_length };
-        auto& mask_width = erode_mask_width;
-        auto& mask_height = erode_mask_height;
-        auto& max = erode_max;
+        auto mask_width = erode_mask_width;
+        auto mask_height = erode_mask_height;
+        auto max = erode_max;
 
         auto f = [&] {
             queue.submit([&](sycl::handler& cgf) {
@@ -354,8 +343,8 @@ int main(int argc, char** argv) {
     constexpr unsigned char dilate_min = 0;
     std::cout << group << std::endl;
     {
-        auto& mask = dilate_mask;
-        auto& min = dilate_min;
+        auto mask = dilate_mask;
+        auto min = dilate_min;
         int midx = dilate_mask_width / 2;
         int midy = dilate_mask_height / 2;
 
@@ -399,9 +388,9 @@ int main(int argc, char** argv) {
     if (usm_compatible) {
         auto maskptr = sycl::malloc_device<unsigned char>(dilate_mask_length, queue);
         queue.memcpy(maskptr, dilate_mask, dilate_mask_length);
-        auto& mask_width = dilate_mask_width;
-        auto& mask_height = dilate_mask_height;
-        auto& min = dilate_min;
+        auto mask_width = dilate_mask_width;
+        auto mask_height = dilate_mask_height;
+        auto min = dilate_min;
 
         auto f = [&] {
             auto kernel = vn::DilateKernel<decltype(inptr), decltype(outptr), decltype(maskptr), decltype(min)>(channels, inptr, outptr, maskptr, mask_width, mask_height, min);
@@ -416,9 +405,9 @@ int main(int argc, char** argv) {
     }
     {
         auto mask = sycl::buffer<unsigned char>{ dilate_mask, dilate_mask_length };
-        auto& mask_width = dilate_mask_width;
-        auto& mask_height = dilate_mask_height;
-        auto& min = dilate_min;
+        auto mask_width = dilate_mask_width;
+        auto mask_height = dilate_mask_height;
+        auto min = dilate_min;
 
         auto f = [&] {
             queue.submit([&](sycl::handler& cgf) {
