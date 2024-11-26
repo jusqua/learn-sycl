@@ -2,6 +2,8 @@
 #include <filesystem>
 #include <iostream>
 
+#include <nd_range.hpp>
+#include <range.hpp>
 #include <visionsycl/image.hpp>
 #include <visionsycl/processing.hpp>
 #include <visionsycl/selector.hpp>
@@ -10,36 +12,22 @@ namespace ch = std::chrono;
 namespace fs = std::filesystem;
 namespace vn = visionsycl;
 
-double get_delta(std::function<void(void)> func) {
-    auto start = ch::high_resolution_clock::now();
-    func();
-    auto end = ch::high_resolution_clock::now();
-    return static_cast<ch::duration<double, std::milli>>(end - start).count();
-}
-
-std::string get_filepath(std::string& group, std::string& title, fs::path& inpath, fs::path& outpath) {
-    return outpath.generic_string() + group + "-" + title + "-" + inpath.filename().generic_string();
-}
-
-void perform_benchmark(std::string& title, size_t& rounds, std::function<void(void)> func) {
-    double delta;
-    delta = get_delta(func);
-    std::cout << title << ": " << delta << "ms (once) | ";
-    delta = get_delta([&rounds, &func] { for (size_t i = 0; i < rounds; ++i) func(); });
-    std::cout << delta << "ms (" << rounds << " times)" << std::endl;
-}
+double get_delta(std::function<void(void)> func);
+std::string get_filepath(std::string& group, std::string& title, fs::path& inpath, fs::path& outpath);
+void perform_benchmark(std::string& title, size_t& rounds, std::function<void(void)> func);
 
 int main(int argc, char** argv) {
+    size_t rounds = 1000;
+
+    // Ensure correct number of arguments
     if (argc < 3 || argc > 4) {
-        std::cerr << "Usage: " << argv[0]
-                  << " [INPUT IMAGE] [OUTPUT PATH] [[ROUNDS] = 1000]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " [INPUT IMAGE] [OUTPUT PATH] [[ROUNDS] = " << rounds << "]" << std::endl;
         return 1;
     }
 
-    size_t rounds = 1000;
+    // Ensure rounds is a number
     if (argc == 4) {
         auto arg = std::string(argv[3]);
-
         try {
             std::size_t pos;
             rounds = std::stoi(arg, &pos);
@@ -54,12 +42,12 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Ensure input and output are valid
     fs::path inpath(argv[1]);
     if (!inpath.has_filename()) {
         std::cerr << "Error: [INPUT IMAGE] must be an image file, e.g. JPG and PNG" << std::endl;
         return 2;
     }
-
     fs::path outpath(argv[2]);
     if (outpath.has_filename()) {
         std::cerr << "Error: [OUTPUT PATH] must be a path to output image file" << std::endl;
@@ -67,20 +55,39 @@ int main(int argc, char** argv) {
     }
 
     std::string group, title;
-    auto queue = sycl::queue{ vn::priority_backend_selector_v };
+
+    // Load image from provided path
     auto input = vn::load_image(inpath.generic_string().c_str());
     auto output = vn::Image(input.shape[1], input.shape[0], input.channels);
     auto channels = input.channels;
+
+    // Device definitions
+    auto queue = sycl::queue{ vn::priority_backend_selector_v };
+    auto subgroup_sizes = queue.get_device().get_info<sycl::info::device::sub_group_sizes>();
+    auto subgroup = subgroup_sizes.back();
+    auto usm_compatible = queue.get_device().has(sycl::aspect::usm_device_allocations);
+
+    // Image shape definitions
     auto shape = input.length / input.channels;
     auto shape2d = sycl::range<2>{ static_cast<size_t>(input.shape[0]), static_cast<size_t>(input.shape[1]) };
 
+    // Image ND shape definitions
+    auto global_work_size = sycl::range<2>{ static_cast<size_t>(input.shape[0]), static_cast<size_t>(input.shape[1]) };
+    auto local_group_size = sycl::range<2>{ subgroup, subgroup };
+    auto nd_range = sycl::nd_range<2>{ global_work_size, local_group_size };
+
+    // USM image memory allocation
+    // TODO: Move to a separate function to avoid code crash
     auto inptr = sycl::malloc_device<uint8_t>(input.length, queue);
     auto outptr = sycl::malloc_device<uint8_t>(output.length, queue);
     queue.memcpy(inptr, input.data, output.length).wait();
 
+    // Buffer image memory allocation
     auto inbuf = sycl::buffer<uint8_t, 1>{ input.data, input.length };
     auto outbuf = sycl::buffer<uint8_t, 1>{ output.data, output.length };
 
+    // Image save functions for every memory model
+    // TODO: Move away from main function
     auto host_save_image = [&output](std::string filepath) {
         vn::save_image_as(filepath.c_str(), output);
     };
@@ -95,10 +102,7 @@ int main(int argc, char** argv) {
         vn::save_image_as(filepath.c_str(), output);
     };
 
-    auto subgroup_sizes = queue.get_device().get_info<sycl::info::device::sub_group_sizes>();
-    auto subgroup = subgroup_sizes.back();
-    auto usm_compatible = queue.get_device().has(sycl::aspect::usm_device_allocations);
-
+    // Display device information
     std::cout << "Device: " << queue.get_device().get_info<sycl::info::device::name>() << std::endl;
     std::cout << "Platform: " << queue.get_device().get_platform().get_info<sycl::info::platform::name>() << std::endl;
     std::cout << "Compute Units: " << queue.get_device().get_info<sycl::info::device::max_compute_units>() << std::endl;
@@ -109,6 +113,7 @@ int main(int argc, char** argv) {
     std::cout << "USM Memory Model Compatible: " << (usm_compatible ? "Yes" : "No, desabling benchmarks") << std::endl;
     std::cout << std::endl;
 
+    // Benchmarks
     group = "inversion";
     std::cout << group << std::endl;
     constexpr unsigned char inversion_mask = 255;
@@ -438,4 +443,23 @@ int main(int argc, char** argv) {
     sycl::free(outptr, queue);
 
     return 0;
+}
+
+double get_delta(std::function<void(void)> func) {
+    auto start = ch::high_resolution_clock::now();
+    func();
+    auto end = ch::high_resolution_clock::now();
+    return static_cast<ch::duration<double, std::milli>>(end - start).count();
+}
+
+std::string get_filepath(std::string& group, std::string& title, fs::path& inpath, fs::path& outpath) {
+    return outpath.generic_string() + group + "-" + title + "-" + inpath.filename().generic_string();
+}
+
+void perform_benchmark(std::string& title, size_t& rounds, std::function<void(void)> func) {
+    double delta;
+    delta = get_delta(func);
+    std::cout << title << ": " << delta << "ms (once) | ";
+    delta = get_delta([&rounds, &func] { for (size_t i = 0; i < rounds; ++i) func(); });
+    std::cout << delta << "ms (" << rounds << " times)" << std::endl;
 }
