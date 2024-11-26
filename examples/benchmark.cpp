@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
     }
 
     std::string group, title;
-    auto queue = sycl::queue{ vn::usm_selector_v };
+    auto queue = sycl::queue{ vn::priority_backend_selector_v };
     auto input = vn::load_image(inpath.generic_string().c_str());
     auto output = vn::Image(input.shape[1], input.shape[0], input.channels);
     auto channels = input.channels;
