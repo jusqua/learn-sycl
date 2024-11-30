@@ -71,7 +71,7 @@ Image load_image(const char* filepath) {
 }
 
 int save_image_as(const char* filepath, Image& image) {
-    return stbi_write_png(filepath, image.shape[1], image.shape[0], image.channels, image.data, 100);
+    return stbi_write_png(filepath, image.shape[1], image.shape[0], image.channels, image.data, 0);
 }
 
 }  // namespace visionsycl
