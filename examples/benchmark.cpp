@@ -1,5 +1,6 @@
 #include <chrono>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 
 #include <visionsycl/image.hpp>
@@ -10,12 +11,13 @@ namespace ch = std::chrono;
 namespace fs = std::filesystem;
 namespace vn = visionsycl;
 
-double get_delta(std::function<void(void)> func);
-std::string get_filepath(std::string& group, std::string& title, fs::path& inpath, fs::path& outpath);
-void perform_benchmark(std::string& title, size_t& rounds, std::function<void(void)> func);
+void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size_t& rounds);
+std::pair<double, double> measure_time(std::function<void(void)> f, size_t rounds);
+void benchmark_function_list(size_t& rounds, fs::path& inpath, fs::path& outpath, std::function<void(std::string)> save_func, std::vector<std::pair<std::string, std::function<void(void)>>> functions);
 
 int main(int argc, char** argv) {
-    size_t rounds = 1000;
+    constexpr const size_t default_rounds = 1000;
+    size_t rounds = default_rounds;
 
     // Ensure correct number of arguments
     if (argc < 3 || argc > 4) {
@@ -32,18 +34,21 @@ int main(int argc, char** argv) {
 
             if (pos < arg.size()) {
                 std::cerr << "Error: [ROUNDS] not a number" << std::endl;
+                rounds = default_rounds;
             }
         } catch (std::invalid_argument const& ex) {
             std::cerr << "Error: [ROUNDS] is an invalid argument" << std::endl;
+            rounds = default_rounds;
         } catch (std::out_of_range const& ex) {
             std::cerr << "Error: [ROUNDS] is out of range" << std::endl;
+            rounds = default_rounds;
         }
     }
 
     // Ensure input and output are valid
     fs::path inpath(argv[1]);
     if (!inpath.has_filename()) {
-        std::cerr << "Error: [INPUT IMAGE] must be an image file, e.g. JPG and PNG" << std::endl;
+        std::cerr << "Error: [INPUT IMAGE] must be an image file, e.g. JPG or PNG" << std::endl;
         return 2;
     }
     fs::path outpath(argv[2]);
@@ -52,379 +57,125 @@ int main(int argc, char** argv) {
         return 3;
     }
 
-    std::string group, title;
+    // Device definitions
+    auto q = sycl::queue{ vn::priority_backend_selector_v };
+    auto is_usm_compatible = q.get_device().has(sycl::aspect::usm_device_allocations);
+
+    // Display device information
+    std::cout << "Device: " << q.get_device().get_info<sycl::info::device::name>() << std::endl
+              << "Platform: " << q.get_device().get_platform().get_info<sycl::info::platform::name>() << std::endl
+              << "Compute Units: " << q.get_device().get_info<sycl::info::device::max_compute_units>() << std::endl
+              << "Memory Model: " << (is_usm_compatible ? "Unified Shared Memory" : "Generic Buffer") << std::endl
+              << std::endl;
+
+    if (!is_usm_compatible) {
+        std::cerr << "Benchmark with Generic Buffer Memory Model is not possible yet." << std::endl;
+        return -1;
+    }
+
+    perform_benchmark(q, inpath, outpath, rounds);
+
+    return 0;
+}
+
+void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size_t& rounds) {
+    std::vector<std::pair<std::string, std::function<void(void)>>> functions;
 
     // Load image from provided path
     auto input = vn::load_image(inpath.generic_string().c_str());
     auto output = vn::Image(input.shape[1], input.shape[0], input.channels);
     auto channels = input.channels;
 
-    // Device definitions
-    auto queue = sycl::queue{ vn::priority_backend_selector_v };
-    auto usm_compatible = queue.get_device().has(sycl::aspect::usm_device_allocations);
-
     // Image shape definitions
     auto linear_shape = input.length / input.channels;
     auto bidimensional_shape = sycl::range<2>{ static_cast<size_t>(input.shape[0]), static_cast<size_t>(input.shape[1]) };
 
-    // USM image memory allocation
-    uint8_t* inptr;
-    uint8_t* outptr;
-    if (usm_compatible) {
-        inptr = sycl::malloc_device<uint8_t>(input.length, queue);
-        outptr = sycl::malloc_device<uint8_t>(output.length, queue);
-        queue.memcpy(inptr, input.data, output.length).wait();
-    }
+    // Allocate memory for input and output images
+    auto in = sycl::malloc_device<uint8_t>(input.length, q);
+    auto out = sycl::malloc_device<uint8_t>(output.length, q);
+    q.memcpy(in, input.data, input.length).wait_and_throw();
 
-    // Buffer image memory allocation
-    auto inbuf = sycl::buffer<uint8_t, 1>{ input.data, input.length };
-    auto outbuf = sycl::buffer<uint8_t, 1>{ output.data, output.length };
-
-    // Image save functions for every memory model
-    // TODO: Move away from main function
-    auto host_save_image = [&output](std::string filepath) {
-        vn::save_image_as(filepath.c_str(), output);
-    };
-    auto usm_save_image = [&output, &outptr, &queue](std::string filepath) {
-        queue.memcpy(output.data, outptr, output.length).wait();
-        vn::save_image_as(filepath.c_str(), output);
-    };
-    auto buffer_save_image = [&output, &outbuf, &queue](std::string filepath) {
-        auto outacc = outbuf.get_host_access();
-        for (unsigned long i = 0; i < output.length; ++i)
-            output.data[i] = outacc[i];
+    // Generic save image lambda
+    auto save_image = [&output, &out, &q](std::string filepath) {
+        q.memcpy(output.data, out, output.length).wait_and_throw();
         vn::save_image_as(filepath.c_str(), output);
     };
 
-    // Display device information
-    std::cout << "Device: " << queue.get_device().get_info<sycl::info::device::name>() << std::endl;
-    std::cout << "Platform: " << queue.get_device().get_platform().get_info<sycl::info::platform::name>() << std::endl;
-    std::cout << "Compute Units: " << queue.get_device().get_info<sycl::info::device::max_compute_units>() << std::endl;
-    std::cout << "USM Memory Model Compatible: " << (usm_compatible ? "Yes" : "No, desabling benchmarks") << std::endl;
-    std::cout << std::endl;
+    auto inversion_kernel = vn::InversionKernel<decltype(in), decltype(out)>(channels, in, out);
+    auto inversion = [&in, &out, &q, &linear_shape, &inversion_kernel] {
+        q.parallel_for(linear_shape, inversion_kernel).wait_and_throw();
+    };
+    functions.push_back({ "inversion", inversion });
 
-    // Benchmarks
-    group = "inversion";
-    std::cout << group << std::endl;
-    {
-        constexpr uint8_t mask = 255;
-        auto f = [&] {
-            for (size_t i = 0; i < input.length; i += input.channels) {
-                output.data[i] = mask - input.data[i];
-                output.data[i + 1] = mask - input.data[i + 1];
-                output.data[i + 2] = mask - input.data[i + 2];
-            }
-        };
-        title = "host";
-        perform_benchmark(title, rounds, f);
-        host_save_image(get_filepath(group, title, inpath, outpath));
-    }
-    if (usm_compatible) {
-        auto f = [&] {
-            auto kernel = vn::InversionKernel<decltype(inptr), decltype(outptr)>(channels, inptr, outptr);
-            queue.parallel_for(linear_shape, kernel);
-            queue.wait_and_throw();
-        };
-        title = "usm";
-        perform_benchmark(title, rounds, f);
-        usm_save_image(get_filepath(group, title, inpath, outpath));
-    }
-    {
-        auto f = [&] {
-            queue.submit([&](sycl::handler& cgf) {
-                auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
-                auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
-                auto kernel = vn::InversionKernel<decltype(inacc), decltype(outacc)>(channels, inacc, outacc);
+    auto grayscale_kernel = vn::GrayscaleKernel<decltype(in), decltype(out)>(channels, in, out);
+    auto grayscale = [&in, &out, &q, &linear_shape, &grayscale_kernel] {
+        q.parallel_for(linear_shape, grayscale_kernel).wait_and_throw();
+    };
+    functions.push_back({ "grayscale", grayscale });
 
-                cgf.parallel_for(linear_shape, kernel);
-            });
-
-            queue.wait_and_throw();
-        };
-        title = "buffer";
-        perform_benchmark(title, rounds, f);
-        buffer_save_image(get_filepath(group, title, inpath, outpath));
-    }
-    std::cout << std::endl;
-
-    group = "grayscale";
-    std::cout << group << std::endl;
-    {
-        auto f = [&] {
-            for (size_t i = 0; i < input.length; i += input.channels) {
-                auto mean = (input.data[i] + input.data[i + 1] + input.data[i + 2]) / 3;
-                output.data[i] = mean;
-                output.data[i + 1] = mean;
-                output.data[i + 2] = mean;
-            }
-        };
-        title = "host";
-        perform_benchmark(title, rounds, f);
-        host_save_image(get_filepath(group, title, inpath, outpath));
-    }
-    if (usm_compatible) {
-        auto f = [&] {
-            auto kernel = vn::GrayscaleKernel<decltype(inptr), decltype(outptr)>(channels, inptr, outptr);
-            queue.parallel_for(linear_shape, kernel);
-            queue.wait_and_throw();
-        };
-        title = "usm";
-        perform_benchmark(title, rounds, f);
-        usm_save_image(get_filepath(group, title, inpath, outpath));
-    }
-    {
-        auto f = [&] {
-            queue.submit([&](sycl::handler& cgf) {
-                auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
-                auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
-                auto kernel = vn::GrayscaleKernel<decltype(inacc), decltype(outacc)>(channels, inacc, outacc);
-
-                cgf.parallel_for(linear_shape, kernel);
-            });
-
-            queue.wait_and_throw();
-        };
-        title = "buffer";
-        perform_benchmark(title, rounds, f);
-        buffer_save_image(get_filepath(group, title, inpath, outpath));
-    }
-    std::cout << std::endl;
-
-    group = "threshold";
     constexpr unsigned char threshold_control = 128;
     constexpr unsigned char threshold_top = 255;
-    std::cout << group << std::endl;
-    {
-        auto f = [&] {
-            for (size_t i = 0; i < input.length; i += input.channels) {
-                output.data[i] = input.data[i] > threshold_control ? threshold_top : 0;
-                output.data[i + 1] = input.data[i + 1] > threshold_control ? threshold_top : 0;
-                output.data[i + 2] = input.data[i + 2] > threshold_control ? threshold_top : 0;
-            }
-        };
-        title = "host";
-        perform_benchmark(title, rounds, f);
-        host_save_image(get_filepath(group, title, inpath, outpath));
-    }
-    if (usm_compatible) {
-        auto f = [&] {
-            auto kernel = vn::ThresholdKernel<decltype(inptr), decltype(outptr), decltype(threshold_control)>(channels, inptr, outptr, threshold_control, threshold_top);
-            queue.parallel_for(linear_shape, kernel);
-            queue.wait_and_throw();
-        };
-        title = "usm";
-        perform_benchmark(title, rounds, f);
-        usm_save_image(get_filepath(group, title, inpath, outpath));
-    }
-    {
-        auto f = [&] {
-            queue.submit([&](sycl::handler& cgf) {
-                auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
-                auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
-                auto kernel = vn::ThresholdKernel<decltype(inacc), decltype(outacc), decltype(threshold_control)>(channels, inacc, outacc, threshold_control, threshold_top);
+    auto threshold_kernel = vn::ThresholdKernel<decltype(in), decltype(out), decltype(threshold_control)>(channels, in, out, threshold_control, threshold_top);
+    auto threshold = [&in, &out, &q, &linear_shape, &threshold_kernel] {
+        q.parallel_for(linear_shape, threshold_kernel).wait_and_throw();
+    };
+    functions.push_back({ "threshold", threshold });
 
-                cgf.parallel_for(linear_shape, kernel);
-            });
-
-            queue.wait_and_throw();
-        };
-        title = "buffer";
-        perform_benchmark(title, rounds, f);
-        buffer_save_image(get_filepath(group, title, inpath, outpath));
-    }
-    std::cout << std::endl;
-
-    group = "erode";
-    constexpr unsigned char erode_mask[] = { 0, 1, 0, 1, 1, 1, 0, 1, 0 };
+    constexpr unsigned char erode_mask_array[] = { 0, 1, 0, 1, 1, 1, 0, 1, 0 };
     constexpr int erode_mask_length = 9;
     constexpr int erode_mask_width = 3;
     constexpr int erode_mask_height = 3;
     constexpr unsigned char erode_max = 255;
-    std::cout << group << std::endl;
-    {
-        int midx = erode_mask_width / 2;
-        int midy = erode_mask_height / 2;
+    auto erode_mask = sycl::malloc_device<uint8_t>(erode_mask_length, q);
+    q.memcpy(erode_mask, erode_mask_array, erode_mask_length);
+    auto erode_kernel = vn::ErodeKernel<decltype(in), decltype(out), decltype(erode_mask), decltype(erode_max)>(channels, in, out, erode_mask, erode_mask_width, erode_mask_height, erode_max);
+    auto erode = [&in, &out, &q, &bidimensional_shape, &erode_kernel] {
+        q.parallel_for(bidimensional_shape, erode_kernel).wait_and_throw();
+    };
+    functions.push_back({ "erode", erode });
 
-        auto f = [&] {
-            for (int row = 0; row < input.shape[0]; ++row) {
-                for (int col = 0; col < input.shape[1]; ++col) {
-                    int counter = 0;
-                    unsigned char r = erode_max, g = erode_max, b = erode_max;
-                    float sum = r + g + b;
-
-                    for (int i = -midx; i <= midx; ++i) {
-                        for (int j = -midy; j <= midy; ++j, ++counter) {
-                            auto x = col + i;
-                            auto y = row + j;
-
-                            if (x >= 0 && x < input.shape[1] && y >= 0 && y < input.shape[0]) {
-                                auto pos = (y * input.shape[1] + x) * channels;
-                                float new_sum = input.data[pos] + input.data[pos + 1] + input.data[pos + 2];
-                                if (erode_mask[counter] != 0 && sum > new_sum) {
-                                    r = input.data[pos];
-                                    g = input.data[pos + 1];
-                                    b = input.data[pos + 2];
-                                    sum = new_sum;
-                                }
-                            }
-                        }
-                    }
-
-                    auto pos = (row * input.shape[1] + col) * channels;
-                    output.data[pos] = r;
-                    output.data[pos + 1] = g;
-                    output.data[pos + 2] = b;
-                }
-            }
-        };
-
-        title = "host";
-        perform_benchmark(title, rounds, f);
-        host_save_image(get_filepath(group, title, inpath, outpath));
-    }
-    if (usm_compatible) {
-        auto maskptr = sycl::malloc_device<uint8_t>(erode_mask_length, queue);
-        queue.memcpy(maskptr, erode_mask, erode_mask_length);
-
-        auto f = [&] {
-            auto kernel = vn::ErodeKernel<decltype(inptr), decltype(outptr), decltype(maskptr), decltype(erode_max)>(channels, inptr, outptr, maskptr, erode_mask_width, erode_mask_height, erode_max);
-            queue.parallel_for(bidimensional_shape, kernel);
-            queue.wait_and_throw();
-        };
-
-        title = "usm";
-        perform_benchmark(title, rounds, f);
-        usm_save_image(get_filepath(group, title, inpath, outpath));
-        sycl::free(maskptr, queue);
-    }
-    {
-        auto mask = sycl::buffer<unsigned char>{ erode_mask, erode_mask_length };
-
-        auto f = [&] {
-            queue.submit([&](sycl::handler& cgf) {
-                auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
-                auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
-                auto maskacc = sycl::accessor(outbuf, cgf, sycl::read_only);
-                auto kernel = vn::ErodeKernel<decltype(inacc), decltype(outacc), decltype(maskacc), decltype(erode_max)>(channels, inacc, outacc, maskacc, erode_mask_width, erode_mask_height, erode_max);
-
-                cgf.parallel_for(bidimensional_shape, kernel);
-            });
-
-            queue.wait_and_throw();
-        };
-
-        title = "buffer";
-        perform_benchmark(title, rounds, f);
-        buffer_save_image(get_filepath(group, title, inpath, outpath));
-    }
-    std::cout << std::endl;
-
-    group = "dilate";
-    constexpr unsigned char dilate_mask[] = { 0, 1, 0, 1, 1, 1, 0, 1, 0 };
+    constexpr unsigned char dilate_mask_array[] = { 0, 1, 0, 1, 1, 1, 0, 1, 0 };
     constexpr int dilate_mask_length = 9;
     constexpr int dilate_mask_width = 3;
     constexpr int dilate_mask_height = 3;
     constexpr unsigned char dilate_min = 0;
-    std::cout << group << std::endl;
+    auto dilate_mask = sycl::malloc_device<uint8_t>(dilate_mask_length, q);
+    q.memcpy(dilate_mask, dilate_mask_array, dilate_mask_length);
+    auto dilate_kernel = vn::DilateKernel<decltype(in), decltype(out), decltype(dilate_mask), decltype(dilate_min)>(channels, in, out, dilate_mask, dilate_mask_width, dilate_mask_height, dilate_min);
+    auto dilate = [&in, &out, &q, &bidimensional_shape, &dilate_kernel] {
+        q.parallel_for(bidimensional_shape, dilate_kernel).wait_and_throw();
+    };
+    functions.push_back({ "dilate", dilate });
+
+    benchmark_function_list(rounds, inpath, outpath, save_image, functions);
+
+    sycl::free(in, q);
+    sycl::free(out, q);
+    sycl::free(erode_mask, q);
+    sycl::free(dilate_mask, q);
+}
+
+std::pair<double, double> measure_time(std::function<void(void)> f, size_t rounds) {
+    double delta_once, delta_total;
     {
-        int midx = dilate_mask_width / 2;
-        int midy = dilate_mask_height / 2;
-
-        auto f = [&] {
-            for (int row = 0; row < input.shape[0]; ++row) {
-                for (int col = 0; col < input.shape[1]; ++col) {
-                    int counter = 0;
-                    unsigned char r = dilate_min, g = dilate_min, b = dilate_min;
-                    float sum = r + g + b;
-
-                    for (int i = -midx; i <= midx; ++i) {
-                        for (int j = -midy; j <= midy; ++j, ++counter) {
-                            auto x = col + i;
-                            auto y = row + j;
-
-                            if (x >= 0 && x < input.shape[1] && y >= 0 && y < input.shape[0]) {
-                                auto pos = (y * input.shape[1] + x) * channels;
-                                float new_sum = input.data[pos] + input.data[pos + 1] + input.data[pos + 2];
-                                if (dilate_mask[counter] != 0 && sum < new_sum) {
-                                    r = input.data[pos];
-                                    g = input.data[pos + 1];
-                                    b = input.data[pos + 2];
-                                    sum = new_sum;
-                                }
-                            }
-                        }
-                    }
-
-                    auto pos = (row * input.shape[1] + col) * channels;
-                    output.data[pos] = r;
-                    output.data[pos + 1] = g;
-                    output.data[pos + 2] = b;
-                }
-            }
-        };
-
-        title = "host";
-        perform_benchmark(title, rounds, f);
-        host_save_image(get_filepath(group, title, inpath, outpath));
-    }
-    if (usm_compatible) {
-        auto maskptr = sycl::malloc_device<uint8_t>(dilate_mask_length, queue);
-        queue.memcpy(maskptr, dilate_mask, dilate_mask_length);
-
-        auto f = [&] {
-            auto kernel = vn::DilateKernel<decltype(inptr), decltype(outptr), decltype(maskptr), decltype(dilate_min)>(channels, inptr, outptr, maskptr, dilate_mask_width, dilate_mask_height, dilate_min);
-            queue.parallel_for(bidimensional_shape, kernel);
-            queue.wait_and_throw();
-        };
-
-        title = "usm";
-        perform_benchmark(title, rounds, f);
-        usm_save_image(get_filepath(group, title, inpath, outpath));
-        sycl::free(maskptr, queue);
+        auto start = ch::high_resolution_clock::now();
+        f();
+        auto end = ch::high_resolution_clock::now();
+        delta_once = static_cast<ch::duration<double, std::milli>>(end - start).count();
     }
     {
-        auto mask = sycl::buffer<unsigned char>{ dilate_mask, dilate_mask_length };
-
-        auto f = [&] {
-            queue.submit([&](sycl::handler& cgf) {
-                auto inacc = sycl::accessor(inbuf, cgf, sycl::read_only);
-                auto outacc = sycl::accessor(outbuf, cgf, sycl::write_only, sycl::no_init);
-                auto maskacc = sycl::accessor(outbuf, cgf, sycl::read_only);
-                auto kernel = vn::DilateKernel<decltype(inacc), decltype(outacc), decltype(maskacc), decltype(dilate_min)>(channels, inacc, outacc, maskacc, dilate_mask_width, dilate_mask_height, dilate_min);
-
-                cgf.parallel_for(bidimensional_shape, kernel);
-            });
-
-            queue.wait_and_throw();
-        };
-
-        title = "buffer";
-        perform_benchmark(title, rounds, f);
-        buffer_save_image(get_filepath(group, title, inpath, outpath));
+        auto start = ch::high_resolution_clock::now();
+        for (size_t i = 0; i < rounds; ++i) f();
+        auto end = ch::high_resolution_clock::now();
+        delta_total = static_cast<ch::duration<double, std::milli>>(end - start).count();
     }
-    std::cout << std::endl;
-
-    sycl::free(inptr, queue);
-    sycl::free(outptr, queue);
-
-    return 0;
+    return { delta_once, delta_total };
 }
 
-double get_delta(std::function<void(void)> func) {
-    auto start = ch::high_resolution_clock::now();
-    func();
-    auto end = ch::high_resolution_clock::now();
-    return static_cast<ch::duration<double, std::milli>>(end - start).count();
-}
-
-std::string get_filepath(std::string& group, std::string& title, fs::path& inpath, fs::path& outpath) {
-    return outpath.generic_string() + group + "-" + title + "-" + inpath.filename().generic_string();
-}
-
-void perform_benchmark(std::string& title, size_t& rounds, std::function<void(void)> func) {
-    double delta;
-    delta = get_delta(func);
-    std::cout << title << ": " << delta << "ms (once) | ";
-    delta = get_delta([&rounds, &func] { for (size_t i = 0; i < rounds; ++i) func(); });
-    std::cout << delta << "ms (" << rounds << " times)" << std::endl;
+void benchmark_function_list(size_t& rounds, fs::path& inpath, fs::path& outpath, std::function<void(std::string)> save_func, std::vector<std::pair<std::string, std::function<void(void)>>> functions) {
+    for (auto& [title, func] : functions) {
+        auto [delta_once, delta_total] = measure_time(func, rounds);
+        std::cout << title << ": " << delta_once << "ms (once) | " << delta_total << "ms (" << rounds << " times)" << std::endl;
+        save_func((outpath.generic_string() + title + "-" + inpath.filename().generic_string()).c_str());
+    }
 }
