@@ -168,6 +168,50 @@ private:
     T min;
 };
 
+template <typename inT, typename outT, typename maskT, typename MaskScalarT, typename OutScalarT>
+class ConvolutionKernel {
+public:
+    ConvolutionKernel(int channels, inT& in, outT& out, maskT& mask, int mask_width, int mask_height)
+        : channels(channels), in(in), out(out), mask(mask), midy(mask_height / 2), midx(mask_width / 2) {};
+
+    void operator()(sycl::item<2> item) const {
+        auto col = item.get_id(1);
+        auto row = item.get_id(0);
+        auto width = item.get_range(1);
+        auto height = item.get_range(0);
+        MaskScalarT r = 0, g = 0, b = 0;
+
+        int counter = 0;
+        for (int i = -midx; i <= midx; ++i) {
+            for (int j = -midy; j <= midy; ++j, ++counter) {
+                auto x = col + i;
+                auto y = row + j;
+
+                if (x >= 0 && x < width && y >= 0 && y < height) {
+                    auto pos = (y * width + x) * channels;
+                    r += in[pos] * mask[counter];
+                    g += in[pos + 1] * mask[counter];
+                    b += in[pos + 2] * mask[counter];
+                }
+            }
+        }
+
+        auto pos = (row * width + col) * channels;
+        out[pos] = static_cast<OutScalarT>(r);
+        out[pos + 1] = static_cast<OutScalarT>(g);
+        out[pos + 2] = static_cast<OutScalarT>(b);
+    }
+
+private:
+    int channels;
+    inT in;
+    outT out;
+    maskT mask;
+    int midx;
+    int midy;
+    MaskScalarT min;
+};
+
 }  // namespace visionsycl
 
 #endif  // VISIONSYCL_PROCESSING_HPP

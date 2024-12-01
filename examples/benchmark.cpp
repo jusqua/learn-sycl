@@ -147,12 +147,52 @@ void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size
     };
     functions.push_back({ "dilate", dilate });
 
+    // clang-format off
+    constexpr float convolution_mask_array_blur_3x3[] = {
+        1.0f / 16.0f, 2.0f / 16.0f, 1.0f / 16.0f,
+        2.0f / 16.0f, 4.0f / 16.0f, 2.0f / 16.0f,
+        1.0f / 16.0f, 2.0f / 16.0f, 1.0f / 16.0f
+    };
+    // clang-format on
+    constexpr int convolution_mask_width_blur_3x3 = 3;
+    constexpr int convolution_mask_height_blur_3x3 = 3;
+    constexpr int convolution_mask_length_blur_3x3 = convolution_mask_width_blur_3x3 * convolution_mask_height_blur_3x3;
+    auto convolution_mask_blur_3x3 = sycl::malloc_device<float>(convolution_mask_length_blur_3x3, q);
+    q.memcpy(convolution_mask_blur_3x3, convolution_mask_array_blur_3x3, convolution_mask_length_blur_3x3 * sizeof(decltype(convolution_mask_array_blur_3x3)));
+    auto convolution_kernel_blur_3x3 = vn::ConvolutionKernel<decltype(in), decltype(out), decltype(convolution_mask_blur_3x3), float, uint8_t>(channels, in, out, convolution_mask_blur_3x3, convolution_mask_width_blur_3x3, convolution_mask_height_blur_3x3);
+    auto convolution_blur_3x3 = [&in, &out, &q, &bidimensional_shape, &convolution_kernel_blur_3x3] {
+        q.parallel_for(bidimensional_shape, convolution_kernel_blur_3x3).wait_and_throw();
+    };
+    functions.push_back({ "convolution-gaussian-blur-3x3", convolution_blur_3x3 });
+
+    // clang-format off
+    constexpr float convolution_mask_array_blur_5x5[] = {
+        1.0f / 256.0f,  4.0f / 256.0f,  6.0f / 256.0f,  4.0f / 256.0f, 1.0f / 256.0f,
+        4.0f / 256.0f, 16.0f / 256.0f, 24.0f / 256.0f, 16.0f / 256.0f, 4.0f / 256.0f,
+        6.0f / 256.0f, 24.0f / 256.0f, 36.0f / 256.0f, 24.0f / 256.0f, 6.0f / 256.0f,
+        4.0f / 256.0f, 16.0f / 256.0f, 24.0f / 256.0f, 16.0f / 256.0f, 4.0f / 256.0f,
+        1.0f / 256.0f,  4.0f / 256.0f,  6.0f / 256.0f,  4.0f / 256.0f, 1.0f / 256.0f
+    };
+    // clang-format on
+    constexpr int convolution_mask_width_blur_5x5 = 5;
+    constexpr int convolution_mask_height_blur_5x5 = 5;
+    constexpr int convolution_mask_length_blur_5x5 = convolution_mask_width_blur_5x5 * convolution_mask_height_blur_5x5;
+    auto convolution_mask_blur_5x5 = sycl::malloc_device<float>(convolution_mask_length_blur_5x5, q);
+    q.memcpy(convolution_mask_blur_5x5, convolution_mask_array_blur_5x5, convolution_mask_length_blur_5x5 * sizeof(decltype(convolution_mask_array_blur_5x5)));
+    auto convolution_kernel_blur_5x5 = vn::ConvolutionKernel<decltype(in), decltype(out), decltype(convolution_mask_blur_5x5), float, uint8_t>(channels, in, out, convolution_mask_blur_5x5, convolution_mask_width_blur_5x5, convolution_mask_height_blur_5x5);
+    auto convolution_blur_5x5 = [&in, &out, &q, &bidimensional_shape, &convolution_kernel_blur_5x5] {
+        q.parallel_for(bidimensional_shape, convolution_kernel_blur_5x5).wait_and_throw();
+    };
+    functions.push_back({ "convolution-gaussian-blur-5x5", convolution_blur_5x5 });
+
     benchmark_function_list(rounds, inpath, outpath, save_image, functions);
 
     sycl::free(in, q);
     sycl::free(out, q);
     sycl::free(erode_mask, q);
     sycl::free(dilate_mask, q);
+    sycl::free(convolution_mask_blur_3x3, q);
+    sycl::free(convolution_mask_blur_5x5, q);
 }
 
 std::pair<double, double> measure_time(std::function<void(void)> f, size_t rounds) {
