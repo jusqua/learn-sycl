@@ -78,6 +78,12 @@ int main(int argc, char** argv) {
     auto output = vn::Image(input.shape[1], input.shape[0], input.channels);
     auto channels = input.channels;
 
+    // Display Image information
+    std::cout << "Image Dimensions: " << input.shape[1] << 'x' << input.shape[0] << std::endl
+              << "Image Channels: " << input.channels << std::endl
+              << "Image Length: " << input.length << " bytes" << std::endl
+              << std::endl;
+
     // Image shape definitions
     auto linear_shape = input.length / input.channels;
     auto bidimensional_shape = sycl::range<2>{ static_cast<size_t>(input.shape[0]), static_cast<size_t>(input.shape[1]) };
