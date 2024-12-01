@@ -209,13 +209,13 @@ int main(int argc, char** argv) {
             auto start = ch::high_resolution_clock::now();
             func();
             auto end = ch::high_resolution_clock::now();
-            delta_once = static_cast<ch::duration<double, std::milli>>(end - start).count();
+            delta_once = ch::duration_cast<ch::microseconds>(end - start).count() * 0.001;
         }
         {
             auto start = ch::high_resolution_clock::now();
             for (size_t i = 0; i < rounds; ++i) func();
             auto end = ch::high_resolution_clock::now();
-            delta_total = static_cast<ch::duration<double, std::milli>>(end - start).count();
+            delta_total = ch::duration_cast<ch::microseconds>(end - start).count() * 0.001;
         }
         std::cout << title << ": " << delta_once << "ms (once) | " << delta_total << "ms (" << rounds << " times)" << std::endl;
         if (save) save_func((outpath.generic_string() + prefix + "-" + inpath.filename().generic_string()).c_str());
