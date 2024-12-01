@@ -102,6 +102,16 @@ void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size
         vn::save_image_as(filepath.c_str(), output);
     };
 
+    auto load_to_device = [&input, &in, &q] {
+        q.memcpy(in, input.data, input.length).wait_and_throw();
+    };
+    functions.push_back({ "Load Image to Device", "load-to-device", false, load_to_device });
+
+    auto load_to_host = [&output, &out, &q] {
+        q.memcpy(output.data, out, output.length).wait_and_throw();
+    };
+    functions.push_back({ "Load Image to Host", "load-to-host", false, load_to_host });
+
     auto inversion_kernel = vn::InversionKernel<decltype(in), decltype(out)>(channels, in, out);
     auto inversion = [&in, &out, &q, &linear_shape, &inversion_kernel] {
         q.parallel_for(linear_shape, inversion_kernel).wait_and_throw();
