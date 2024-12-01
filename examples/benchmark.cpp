@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <functional>
 #include <iostream>
+#include <tuple>
 
 #include <visionsycl/image.hpp>
 #include <visionsycl/processing.hpp>
@@ -13,7 +14,7 @@ namespace vn = visionsycl;
 
 void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size_t& rounds);
 std::pair<double, double> measure_time(std::function<void(void)> f, size_t rounds);
-void benchmark_function_list(size_t& rounds, fs::path& inpath, fs::path& outpath, std::function<void(std::string)> save_func, std::vector<std::pair<std::string, std::function<void(void)>>> functions);
+void benchmark_function_list(size_t& rounds, fs::path& inpath, fs::path& outpath, std::function<void(std::string)> save_func, std::vector<std::tuple<std::string, std::string, bool, std::function<void(void)>>> functions);
 
 int main(int argc, char** argv) {
     constexpr const size_t default_rounds = 1000;
@@ -79,7 +80,7 @@ int main(int argc, char** argv) {
 }
 
 void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size_t& rounds) {
-    std::vector<std::pair<std::string, std::function<void(void)>>> functions;
+    std::vector<std::tuple<std::string, std::string, bool, std::function<void(void)>>> functions;
 
     // Load image from provided path
     auto input = vn::load_image(inpath.generic_string().c_str());
@@ -105,13 +106,13 @@ void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size
     auto inversion = [&in, &out, &q, &linear_shape, &inversion_kernel] {
         q.parallel_for(linear_shape, inversion_kernel).wait_and_throw();
     };
-    functions.push_back({ "inversion", inversion });
+    functions.push_back({ "Image Inversion", "inversion", true, inversion });
 
     auto grayscale_kernel = vn::GrayscaleKernel<decltype(in), decltype(out)>(channels, in, out);
     auto grayscale = [&in, &out, &q, &linear_shape, &grayscale_kernel] {
         q.parallel_for(linear_shape, grayscale_kernel).wait_and_throw();
     };
-    functions.push_back({ "grayscale", grayscale });
+    functions.push_back({ "Image Grayscaling", "grayscale", true, grayscale });
 
     constexpr unsigned char threshold_control = 128;
     constexpr unsigned char threshold_top = 255;
@@ -119,7 +120,7 @@ void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size
     auto threshold = [&in, &out, &q, &linear_shape, &threshold_kernel] {
         q.parallel_for(linear_shape, threshold_kernel).wait_and_throw();
     };
-    functions.push_back({ "threshold", threshold });
+    functions.push_back({ "Image Thresholding", "threshold", true, threshold });
 
     constexpr unsigned char erode_mask_array[] = { 0, 1, 0, 1, 1, 1, 0, 1, 0 };
     constexpr int erode_mask_length = 9;
@@ -132,7 +133,7 @@ void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size
     auto erode = [&in, &out, &q, &bidimensional_shape, &erode_kernel] {
         q.parallel_for(bidimensional_shape, erode_kernel).wait_and_throw();
     };
-    functions.push_back({ "erode", erode });
+    functions.push_back({ "Image Eroding (Cross Mask)", "erode", true, erode });
 
     constexpr unsigned char dilate_mask_array[] = { 0, 1, 0, 1, 1, 1, 0, 1, 0 };
     constexpr int dilate_mask_length = 9;
@@ -145,7 +146,7 @@ void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size
     auto dilate = [&in, &out, &q, &bidimensional_shape, &dilate_kernel] {
         q.parallel_for(bidimensional_shape, dilate_kernel).wait_and_throw();
     };
-    functions.push_back({ "dilate", dilate });
+    functions.push_back({ "Image Dilating (Cross Mask)", "dilate", true, dilate });
 
     // clang-format off
     constexpr float convolution_mask_array_blur_3x3[] = {
@@ -163,7 +164,7 @@ void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size
     auto convolution_blur_3x3 = [&in, &out, &q, &bidimensional_shape, &convolution_kernel_blur_3x3] {
         q.parallel_for(bidimensional_shape, convolution_kernel_blur_3x3).wait_and_throw();
     };
-    functions.push_back({ "convolution-gaussian-blur-3x3", convolution_blur_3x3 });
+    functions.push_back({ "Image Convolution (Gaussian Blur 3x3 Kernel)", "convolution-blur-3", true, convolution_blur_3x3 });
 
     // clang-format off
     constexpr float convolution_mask_array_blur_5x5[] = {
@@ -183,7 +184,7 @@ void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size
     auto convolution_blur_5x5 = [&in, &out, &q, &bidimensional_shape, &convolution_kernel_blur_5x5] {
         q.parallel_for(bidimensional_shape, convolution_kernel_blur_5x5).wait_and_throw();
     };
-    functions.push_back({ "convolution-gaussian-blur-5x5", convolution_blur_5x5 });
+    functions.push_back({ "Image Convolution (Gaussian Blur 5x5 Kernel)", "convolution-blur-5", true, convolution_blur_5x5 });
 
     benchmark_function_list(rounds, inpath, outpath, save_image, functions);
 
@@ -212,10 +213,10 @@ std::pair<double, double> measure_time(std::function<void(void)> f, size_t round
     return { delta_once, delta_total };
 }
 
-void benchmark_function_list(size_t& rounds, fs::path& inpath, fs::path& outpath, std::function<void(std::string)> save_func, std::vector<std::pair<std::string, std::function<void(void)>>> functions) {
-    for (auto& [title, func] : functions) {
+void benchmark_function_list(size_t& rounds, fs::path& inpath, fs::path& outpath, std::function<void(std::string)> save_func, std::vector<std::tuple<std::string, std::string, bool, std::function<void(void)>>> functions) {
+    for (auto& [title, prefix, save, func] : functions) {
         auto [delta_once, delta_total] = measure_time(func, rounds);
         std::cout << title << ": " << delta_once << "ms (once) | " << delta_total << "ms (" << rounds << " times)" << std::endl;
-        save_func((outpath.generic_string() + title + "-" + inpath.filename().generic_string()).c_str());
+        if (save) save_func((outpath.generic_string() + prefix + "-" + inpath.filename().generic_string()).c_str());
     }
 }
