@@ -12,10 +12,6 @@ namespace ch = std::chrono;
 namespace fs = std::filesystem;
 namespace vn = visionsycl;
 
-void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size_t& rounds);
-std::pair<double, double> measure_time(std::function<void(void)> f, size_t rounds);
-void benchmark_function_list(size_t& rounds, fs::path& inpath, fs::path& outpath, std::function<void(std::string)> save_func, std::vector<std::tuple<std::string, std::string, bool, std::function<void(void)>>> functions);
-
 int main(int argc, char** argv) {
     constexpr const size_t default_rounds = 1000;
     size_t rounds = default_rounds;
@@ -74,12 +70,7 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    perform_benchmark(q, inpath, outpath, rounds);
-
-    return 0;
-}
-
-void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size_t& rounds) {
+    // Benchmark function definitions
     std::vector<std::tuple<std::string, std::string, bool, std::function<void(void)>>> functions;
 
     // Load image from provided path
@@ -96,34 +87,39 @@ void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size
     auto out = sycl::malloc_device<uint8_t>(output.length, q);
     q.memcpy(in, input.data, input.length).wait_and_throw();
 
-    // Generic save image lambda
-    auto save_image = [&output, &out, &q](std::string filepath) {
+    // Generic save image
+    auto save_func = [&output, &out, &q](std::string filepath) {
         q.memcpy(output.data, out, output.length).wait_and_throw();
         vn::save_image_as(filepath.c_str(), output);
     };
 
+    // Load image to device
     auto load_to_device = [&input, &in, &q] {
         q.memcpy(in, input.data, input.length).wait_and_throw();
     };
     functions.push_back({ "Load Image to Device", "load-to-device", false, load_to_device });
 
+    // Load image to host
     auto load_to_host = [&output, &out, &q] {
         q.memcpy(output.data, out, output.length).wait_and_throw();
     };
     functions.push_back({ "Load Image to Host", "load-to-host", false, load_to_host });
 
+    // Inversion kernel
     auto inversion_kernel = vn::InversionKernel<decltype(in), decltype(out)>(channels, in, out);
     auto inversion = [&in, &out, &q, &linear_shape, &inversion_kernel] {
         q.parallel_for(linear_shape, inversion_kernel).wait_and_throw();
     };
     functions.push_back({ "Image Inversion", "inversion", true, inversion });
 
+    // Grayscaling kernel
     auto grayscale_kernel = vn::GrayscaleKernel<decltype(in), decltype(out)>(channels, in, out);
     auto grayscale = [&in, &out, &q, &linear_shape, &grayscale_kernel] {
         q.parallel_for(linear_shape, grayscale_kernel).wait_and_throw();
     };
     functions.push_back({ "Image Grayscaling", "grayscale", true, grayscale });
 
+    // Threshold kernel for binary image
     constexpr unsigned char threshold_control = 128;
     constexpr unsigned char threshold_top = 255;
     auto threshold_kernel = vn::ThresholdKernel<decltype(in), decltype(out), decltype(threshold_control)>(channels, in, out, threshold_control, threshold_top);
@@ -132,6 +128,7 @@ void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size
     };
     functions.push_back({ "Image Thresholding", "threshold", true, threshold });
 
+    // Erode kernel for cross masking
     constexpr unsigned char erode_mask_array[] = { 0, 1, 0, 1, 1, 1, 0, 1, 0 };
     constexpr int erode_mask_length = 9;
     constexpr int erode_mask_width = 3;
@@ -145,6 +142,7 @@ void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size
     };
     functions.push_back({ "Image Eroding (Cross Mask)", "erode", true, erode });
 
+    // Dilate kernel for cross masking
     constexpr unsigned char dilate_mask_array[] = { 0, 1, 0, 1, 1, 1, 0, 1, 0 };
     constexpr int dilate_mask_length = 9;
     constexpr int dilate_mask_width = 3;
@@ -159,6 +157,7 @@ void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size
     functions.push_back({ "Image Dilating (Cross Mask)", "dilate", true, dilate });
 
     // clang-format off
+    // Convolution kernel for 3x3 Gaussian Blur
     constexpr float convolution_mask_array_blur_3x3[] = {
         1.0f / 16.0f, 2.0f / 16.0f, 1.0f / 16.0f,
         2.0f / 16.0f, 4.0f / 16.0f, 2.0f / 16.0f,
@@ -177,6 +176,7 @@ void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size
     functions.push_back({ "Image Convolution (Gaussian Blur 3x3 Kernel)", "convolution-blur-3", true, convolution_blur_3x3 });
 
     // clang-format off
+    // Convolution kernel for 5x5 Gaussian Blur
     constexpr float convolution_mask_array_blur_5x5[] = {
         1.0f / 256.0f,  4.0f / 256.0f,  6.0f / 256.0f,  4.0f / 256.0f, 1.0f / 256.0f,
         4.0f / 256.0f, 16.0f / 256.0f, 24.0f / 256.0f, 16.0f / 256.0f, 4.0f / 256.0f,
@@ -196,37 +196,32 @@ void perform_benchmark(sycl::queue& q, fs::path& inpath, fs::path& outpath, size
     };
     functions.push_back({ "Image Convolution (Gaussian Blur 5x5 Kernel)", "convolution-blur-5", true, convolution_blur_5x5 });
 
-    benchmark_function_list(rounds, inpath, outpath, save_image, functions);
+    // Perform every benchmark
+    for (auto& [title, prefix, save, func] : functions) {
+        double delta_once, delta_total;
+        {
+            auto start = ch::high_resolution_clock::now();
+            func();
+            auto end = ch::high_resolution_clock::now();
+            delta_once = static_cast<ch::duration<double, std::milli>>(end - start).count();
+        }
+        {
+            auto start = ch::high_resolution_clock::now();
+            for (size_t i = 0; i < rounds; ++i) func();
+            auto end = ch::high_resolution_clock::now();
+            delta_total = static_cast<ch::duration<double, std::milli>>(end - start).count();
+        }
+        std::cout << title << ": " << delta_once << "ms (once) | " << delta_total << "ms (" << rounds << " times)" << std::endl;
+        if (save) save_func((outpath.generic_string() + prefix + "-" + inpath.filename().generic_string()).c_str());
+    }
 
+    // Free all elements
     sycl::free(in, q);
     sycl::free(out, q);
     sycl::free(erode_mask, q);
     sycl::free(dilate_mask, q);
     sycl::free(convolution_mask_blur_3x3, q);
     sycl::free(convolution_mask_blur_5x5, q);
-}
 
-std::pair<double, double> measure_time(std::function<void(void)> f, size_t rounds) {
-    double delta_once, delta_total;
-    {
-        auto start = ch::high_resolution_clock::now();
-        f();
-        auto end = ch::high_resolution_clock::now();
-        delta_once = static_cast<ch::duration<double, std::milli>>(end - start).count();
-    }
-    {
-        auto start = ch::high_resolution_clock::now();
-        for (size_t i = 0; i < rounds; ++i) f();
-        auto end = ch::high_resolution_clock::now();
-        delta_total = static_cast<ch::duration<double, std::milli>>(end - start).count();
-    }
-    return { delta_once, delta_total };
-}
-
-void benchmark_function_list(size_t& rounds, fs::path& inpath, fs::path& outpath, std::function<void(std::string)> save_func, std::vector<std::tuple<std::string, std::string, bool, std::function<void(void)>>> functions) {
-    for (auto& [title, prefix, save, func] : functions) {
-        auto [delta_once, delta_total] = measure_time(func, rounds);
-        std::cout << title << ": " << delta_once << "ms (once) | " << delta_total << "ms (" << rounds << " times)" << std::endl;
-        if (save) save_func((outpath.generic_string() + prefix + "-" + inpath.filename().generic_string()).c_str());
-    }
+    return 0;
 }
