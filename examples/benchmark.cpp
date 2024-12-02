@@ -202,6 +202,13 @@ int main(int argc, char** argv) {
     };
     functions.push_back({ "Image Convolution (Gaussian Blur 5x5 Kernel)", "convolution-blur-5", true, convolution_blur_5x5 });
 
+    // Direct Gaussian Blur 3x3 Kernel
+    auto gaussian_blur_3x3_kernel = vn::GaussianBlur3X3Kernel<decltype(in), decltype(out), uint8_t>(channels, in, out);
+    auto gaussian_blur_3x3 = [&in, &out, &q, &bidimensional_shape, &gaussian_blur_3x3_kernel] {
+        q.parallel_for(bidimensional_shape, gaussian_blur_3x3_kernel).wait_and_throw();
+    };
+    functions.push_back({ "Image Gaussian Blurring (3x3 Kernel)", "blur-3", true, gaussian_blur_3x3 });
+
     // Perform every benchmark
     for (auto& [title, prefix, save, func] : functions) {
         double delta_once, delta_total;

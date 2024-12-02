@@ -212,6 +212,53 @@ private:
     MaskScalarT min;
 };
 
+template <typename inT, typename outT, typename OutScalarT>
+class GaussianBlur3X3Kernel {
+public:
+    GaussianBlur3X3Kernel(int channels, inT& in, outT& out)
+        : channels(channels), in(in), out(out) {};
+
+    void operator()(sycl::item<2> item) const {
+        auto col = item.get_id(1);
+        auto row = item.get_id(0);
+        auto width = item.get_range(1);
+        auto height = item.get_range(0);
+        float r = 0, g = 0, b = 0;
+        // clang-format off
+        constexpr const static float mask[] = {
+            1.0f / 16.0f, 2.0f / 16.0f, 1.0f / 16.0f,
+            2.0f / 16.0f, 4.0f / 16.0f, 2.0f / 16.0f,
+            1.0f / 16.0f, 2.0f / 16.0f, 1.0f / 16.0f
+        };
+        // clang-format on
+
+        int counter = 0;
+        for (int i = -1; i <= 1; ++i) {
+            for (int j = -1; j <= 1; ++j, ++counter) {
+                auto x = col + i;
+                auto y = row + j;
+
+                if (x >= 0 && x < width && y >= 0 && y < height) {
+                    auto pos = (y * width + x) * channels;
+                    r += in[pos] * mask[counter];
+                    g += in[pos + 1] * mask[counter];
+                    b += in[pos + 2] * mask[counter];
+                }
+            }
+        }
+
+        auto pos = (row * width + col) * channels;
+        out[pos] = static_cast<OutScalarT>(r);
+        out[pos + 1] = static_cast<OutScalarT>(g);
+        out[pos + 2] = static_cast<OutScalarT>(b);
+    }
+
+private:
+    int channels;
+    inT in;
+    outT out;
+};
+
 }  // namespace visionsycl
 
 #endif  // VISIONSYCL_PROCESSING_HPP
